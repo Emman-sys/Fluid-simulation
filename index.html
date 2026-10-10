@@ -1,0 +1,2987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AeroFlow 2D - Real-Time Fluid Dynamics & Obstacle Lab</title>
+  <style>
+    :root {
+      --bg-dark: #0a0e17;
+      --panel-bg: rgba(13, 20, 36, 0.78);
+      --panel-border: rgba(56, 189, 248, 0.2);
+      --panel-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+      --accent-cyan: #00f2fe;
+      --accent-blue: #4facfe;
+      --accent-glow: rgba(0, 242, 254, 0.4);
+      --accent-pink: #f43f5e;
+      --accent-amber: #f59e0b;
+      --accent-green: #10b981;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-dark);
+      font-family: var(--font-family);
+      color: var(--text-main);
+    }
+
+    #canvas-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    #gl-canvas, #overlay-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #gl-canvas {
+      z-index: 1;
+    }
+
+    #overlay-canvas {
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* Top Mode & Preset Bar */
+    #top-bar {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 14px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--panel-border);
+      border-radius: 9999px;
+      box-shadow: var(--panel-shadow);
+    }
+
+    .mode-switch-wrapper {
+      display: flex;
+      background: rgba(15, 23, 42, 0.8);
+      padding: 4px;
+      border-radius: 9999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      position: relative;
+    }
+
+    .mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border: none;
+      background: transparent;
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 1;
+    }
+
+    .mode-btn:hover {
+      color: var(--text-main);
+    }
+
+    .mode-btn.active {
+      color: #031124;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      box-shadow: 0 2px 10px var(--accent-glow);
+    }
+
+    .divider {
+      width: 1px;
+      height: 22px;
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .bar-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .action-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      color: var(--text-main);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .action-btn:active {
+      transform: translateY(0);
+    }
+
+    .action-btn.primary {
+      background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(79, 172, 254, 0.2));
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    .action-btn.primary:hover {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      color: #031124;
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    /* Floating Main Control Panel */
+    #sidebar {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      width: 320px;
+      max-height: calc(100vh - 32px);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      box-shadow: var(--panel-shadow);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+    }
+
+    #sidebar.minimized {
+      transform: translateX(calc(-100% - 20px));
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .panel-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .icon-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .panel-body {
+      padding: 14px 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    }
+
+    .panel-body::-webkit-scrollbar {
+      width: 4px;
+    }
+    .panel-body::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-main);
+    }
+
+    .control-val {
+      font-size: 11px;
+      font-family: monospace;
+      padding: 1px 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      color: var(--accent-cyan);
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      box-shadow: 0 0 6px var(--accent-glow);
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .select-dropdown {
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      color: var(--text-main);
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .select-dropdown:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .btn-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 6px 0;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider-toggle {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.2);
+      transition: 0.2s;
+      border-radius: 20px;
+    }
+
+    .slider-toggle:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.2s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider-toggle {
+      background-color: var(--accent-cyan);
+    }
+
+    input:checked + .slider-toggle:before {
+      transform: translateX(16px);
+      background-color: #031124;
+    }
+
+    /* Object Inspector Card */
+    #object-inspector {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-radius: 10px;
+      padding: 10px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #object-inspector.visible {
+      display: flex;
+    }
+
+    /* Toggle Panel Visibility Button */
+    #toggle-panel-btn {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 9;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: var(--panel-shadow);
+      transition: all 0.2s;
+    }
+
+    #toggle-panel-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      transform: scale(1.05);
+    }
+
+    /* HUD overlay */
+    #hud {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      z-index: 10;
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      background: rgba(15, 23, 42, 0.65);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+      pointer-events: none;
+    }
+
+    #hud span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    #hud strong {
+      color: var(--text-main);
+    }
+
+    /* Tooltip / Hint Toast */
+    #hint-toast {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      padding: 6px 16px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 9999px;
+      font-size: 12px;
+      color: var(--text-main);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: opacity 0.3s;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      background: rgba(56, 189, 248, 0.2);
+      color: var(--accent-cyan);
+    }
+
+    /* Help Modal */
+    #help-modal {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 440px;
+      max-width: 90vw;
+      background: var(--panel-bg);
+      backdrop-filter: blur(28px);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 24px;
+      z-index: 100;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+      display: none;
+    }
+
+    #help-modal.visible {
+      display: block;
+    }
+
+    .help-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .shortcut-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12px;
+      margin-top: 12px;
+    }
+
+    .shortcut-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    kbd {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: monospace;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container">
+    <canvas id="gl-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+  </div>
+
+  <!-- Toggle Sidebar Button (shown when sidebar minimized) -->
+  <button id="toggle-panel-btn" title="Toggle Control Panel">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  </button>
+
+  <!-- Top Mode Bar -->
+  <div id="top-bar">
+    <div class="mode-switch-wrapper">
+      <button id="mode-fluid-btn" class="mode-btn active" title="Shortcut: 1">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+        </svg>
+        Fluid Draw
+      </button>
+      <button id="mode-object-btn" class="mode-btn" title="Shortcut: 2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+        </svg>
+        Object Edit
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="bar-actions">
+      <button id="btn-spawn-rect" class="action-btn" title="Add Solid Rectangle">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+        </svg>
+        + Rect
+      </button>
+      <button id="btn-spawn-circle" class="action-btn" title="Add Solid Cylinder">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" />
+        </svg>
+        + Circle
+      </button>
+      <button id="btn-spawn-triangle" class="action-btn" title="Add Solid Wedge / Airfoil Triangle">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 3 22 21 2 21" />
+        </svg>
+        + Triangle
+      </button>
+      <button id="btn-spawn-airfoil" class="action-btn" title="Add NACA Airfoil Body">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 12 C8 6, 20 10, 22 12 C20 14, 8 18, 2 12 Z" />
+        </svg>
+        + Airfoil
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <button id="btn-help" class="icon-btn" title="Help & Shortcuts">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- Left Floating Sidebar -->
+  <div id="sidebar">
+    <div class="panel-header">
+      <div class="panel-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M8 12a4 4 0 1 0 8 0" />
+        </svg>
+        Simulation Lab
+      </div>
+      <button id="close-sidebar-btn" class="icon-btn" title="Minimize Panel">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="panel-body">
+      <!-- Presets -->
+      <div>
+        <div class="section-title">Aerodynamic Presets</div>
+        <select id="preset-select" class="select-dropdown">
+          <option value="windtunnel">🌬️ Wind Tunnel (Airfoil & Streamlines)</option>
+          <option value="karman">🌪️ Kármán Vortex Street (Cylinder Wake)</option>
+          <option value="slalom">⚡ Deflector Slalom (Multi-Obstacle)</option>
+          <option value="sandbox">🎨 Free Airflow Sandbox (Clean Slate)</option>
+        </select>
+      </div>
+
+      <!-- Selected Object Inspector -->
+      <div id="object-inspector">
+        <div class="section-title" style="color: var(--accent-cyan);">Selected Object</div>
+        <div style="font-size: 11px; display: flex; justify-content: space-between;">
+          <span id="insp-type" style="text-transform: capitalize; font-weight: 600;">Rectangle</span>
+          <span id="insp-dim" style="color: var(--text-muted);">14.00 × 8.00 m</span>
+        </div>
+        <div class="control-row">
+          <div class="control-label">
+            <span>Rotation Angle</span>
+            <span id="val-insp-angle" class="control-val">0°</span>
+          </div>
+          <input type="range" id="slider-insp-angle" min="0" max="360" step="1" value="0">
+        </div>
+        <div class="control-row">
+          <div class="control-label">
+            <span>Object Width</span>
+            <span id="val-insp-width" class="control-val">14.00 m</span>
+          </div>
+          <input type="range" id="slider-insp-width" min="0.1" max="1000" step="0.1" value="14">
+        </div>
+        <div class="control-row">
+          <div class="control-label">
+            <span>Object Height</span>
+            <span id="val-insp-height" class="control-val">7.00 m</span>
+          </div>
+          <input type="range" id="slider-insp-height" min="0.1" max="1000" step="0.1" value="7">
+        </div>
+        <div class="btn-grid" style="margin-top: 4px;">
+          <button id="btn-insp-dup" class="action-btn" style="justify-content: center;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            Duplicate
+          </button>
+          <button id="btn-insp-del" class="action-btn" style="justify-content: center; color: var(--accent-pink); border-color: rgba(244,63,94,0.3);">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+            Delete
+          </button>
+        </div>
+      </div>
+
+      <!-- Fluid Physics Parameters -->
+      <div>
+        <div class="section-title">Fluid Physics</div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Viscosity (Fluid Drag)</span>
+            <span id="val-viscosity" class="control-val">0.000</span>
+          </div>
+          <input type="range" id="slider-viscosity" min="0" max="0.03" step="0.001" value="0.000">
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Diffusion Rate</span>
+            <span id="val-diffusion" class="control-val">0.000</span>
+          </div>
+          <input type="range" id="slider-diffusion" min="0" max="0.01" step="0.0005" value="0.000">
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Smoke Dissipation</span>
+            <span id="val-dissipation" class="control-val">0.992</span>
+          </div>
+          <input type="range" id="slider-dissipation" min="0.960" max="1.000" step="0.001" value="0.992">
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Velocity Dissipation</span>
+            <span id="val-vel-dissipation" class="control-val">0.998</span>
+          </div>
+          <input type="range" id="slider-vel-dissipation" min="0.970" max="1.000" step="0.001" value="0.998">
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Splat Radius</span>
+            <span id="val-splat-radius" class="control-val">28 px</span>
+          </div>
+          <input type="range" id="slider-splat-radius" min="8" max="70" step="1" value="28">
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Vorticity / Swirl Strength</span>
+            <span id="val-vorticity" class="control-val">24</span>
+          </div>
+          <input type="range" id="slider-vorticity" min="0" max="50" step="1" value="24">
+        </div>
+      </div>
+
+      <!-- Continuous Airflow & Wind Tunnel -->
+      <div>
+        <div class="section-title">Physical Scale</div>
+        <div class="control-row">
+          <div class="control-label">
+            <span>Domain Width</span>
+            <span id="val-domain-width" class="control-val">100 m</span>
+          </div>
+          <input type="range" id="slider-domain-width" min="1" max="1000" step="1" value="100">
+        </div>
+        <div class="control-row">
+          <div class="control-label">
+            <span>Flow Solver</span>
+          </div>
+          <select id="select-solver" class="select-dropdown">
+            <option value="auto">Auto (Mach-aware)</option>
+            <option value="incompressible">Incompressible</option>
+            <option value="compressible">Compressible Euler</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Continuous Airflow & Wind Tunnel -->
+      <div>
+        <div class="section-title">Continuous Wind Tunnel</div>
+        <div class="toggle-row">
+          <span>Continuous Air Inflow</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-inflow" checked>
+            <span class="slider-toggle"></span>
+          </label>
+        </div>
+        <div class="control-row">
+          <div class="control-label">
+            <span>Inflow Air Velocity</span>
+            <span id="val-inflow-speed" class="control-val">65 m/s</span>
+          </div>
+          <input type="range" id="slider-inflow-speed" min="0" max="686" step="1" value="65"
+            title="Air velocity in m/s, limited to Mach 2.0">
+        </div>
+        <div class="toggle-row">
+          <span>Smoke Streamer Ribbons</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-streamlines" checked>
+            <span class="slider-toggle"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Visualization Options -->
+      <div>
+        <div class="section-title">Visualization</div>
+        <div class="control-row">
+          <div class="control-label">Display Mode</div>
+          <select id="select-viewmode" class="select-dropdown">
+            <option value="0">Smoke Dye (Density)</option>
+            <option value="1">Velocity Magnitude Field</option>
+            <option value="2">Aerodynamic Pressure Field</option>
+            <option value="3">Vorticity (Vortex Swirl)</option>
+          </select>
+        </div>
+        <div class="control-row">
+          <div class="control-label">Smoke Color Palette</div>
+          <select id="select-palette" class="select-dropdown">
+            <option value="0">Cyan Aerodynamics (Neon)</option>
+            <option value="1">Solar Plasma (Fire)</option>
+            <option value="2">Ultraviolet (Cyberpunk)</option>
+            <option value="3">Thermal FLIR (Infrared)</option>
+            <option value="4">Pure White Wind Smoke</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Simulation Actions -->
+      <div>
+        <div class="section-title">Actions</div>
+        <div class="btn-grid-3">
+          <button id="btn-clear-fluid" class="action-btn" style="justify-content: center;">
+            Clear Air
+          </button>
+          <button id="btn-clear-objects" class="action-btn" style="justify-content: center;">
+            Clear Objs
+          </button>
+          <button id="btn-reset" class="action-btn primary" style="justify-content: center;">
+            Reset All
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <span>FPS: <strong id="hud-fps">60</strong></span>
+    <span>•</span>
+    <span>Grid: <strong id="hud-res">512×512</strong></span>
+    <span>•</span>
+    <span>Mode: <strong id="hud-mode">Fluid Draw</strong></span>
+    <span>•</span>
+    <span>Objects: <strong id="hud-objs">1</strong></span>
+  </div>
+
+  <!-- Hint Toast -->
+  <div id="hint-toast">
+    <span class="badge" id="hint-badge">FLUID MODE</span>
+    <span id="hint-text">Click and drag anywhere to inject airflow and smoke.</span>
+  </div>
+
+  <!-- Help Modal -->
+  <div id="help-modal">
+    <div class="help-header">
+      <h3 style="font-size: 16px; font-weight: 700;">AeroFlow 2D - Guide & Shortcuts</h3>
+      <button id="btn-close-help" class="icon-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+      AeroFlow 2D is a high-performance Navier-Stokes fluid dynamics lab with full obstacle boundary integration.
+    </p>
+    <div class="shortcut-list">
+      <div class="shortcut-row">
+        <span>Toggle Fluid Draw Mode</span>
+        <kbd>1</kbd>
+      </div>
+      <div class="shortcut-row">
+        <span>Toggle Object Edit Mode</span>
+        <kbd>2</kbd>
+      </div>
+      <div class="shortcut-row">
+        <span>Scale Object</span>
+        <span>Drag corner handles</span>
+      </div>
+      <div class="shortcut-row">
+        <span>Rotate Object</span>
+        <span>Drag protruding top knob</span>
+      </div>
+      <div class="shortcut-row">
+        <span>Move Object</span>
+        <span>Drag object body</span>
+      </div>
+      <div class="shortcut-row">
+        <span>Snap Rotation (15°)</span>
+        <kbd>Shift + Rotate</kbd>
+      </div>
+      <div class="shortcut-row">
+        <span>Delete Selected Object</span>
+        <kbd>Del / Backspace</kbd>
+      </div>
+      <div class="shortcut-row">
+        <span>Deselect Object</span>
+        <kbd>Esc</kbd>
+      </div>
+      <div class="shortcut-row">
+        <span>Pause / Resume Simulation</span>
+        <kbd>Space</kbd>
+      </div>
+      <div class="shortcut-row">
+        <span>Toggle Control Panel</span>
+        <kbd>Tab</kbd>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ==========================================================================
+       AeroFlow 2D - WebGL2 Navier-Stokes Fluid Solver & Interactive Obstacle Lab
+       ========================================================================== */
+
+    // Airflow units are physical metres and seconds. The solver operates in
+    // grid cells per second, so the conversion depends on the domain width.
+    const AIR = {
+      speedOfSoundMetersPerSecond: 343,
+      maxMach: 2.0
+    };
+    const MAX_INFLOW_SPEED = AIR.speedOfSoundMetersPerSecond * AIR.maxMach;
+
+    // Simulation configuration
+    const CONFIG = {
+      simWidth: 512,
+      simHeight: 512,
+      domainWidth: 100.0, // metres; domain height follows the canvas aspect ratio
+      pressureIterations: 32,
+      viscosityIterations: 10,
+      dt: 0.016,
+      viscosity: 0.000,
+      diffusion: 0.000,
+      dissipation: 0.992,
+      velDissipation: 0.998,
+      splatRadius: 28,
+      vorticity: 24.0,
+      inflow: true,
+      inflowSpeed: 65.0, // m/s
+      solverMode: 'auto', // 'auto' | 'incompressible' | 'compressible'
+      machSwitch: 0.3,
+      gamma: 1.4,
+      streamlines: true,
+      displayMode: 0, // 0: Dye, 1: Velocity, 2: Pressure, 3: Vorticity
+      palette: 0,     // 0: Cyan, 1: Fire, 2: Violet, 3: Thermal, 4: White
+      paused: false
+    };
+
+    // Modes: 'fluid' | 'object'
+    let currentMode = 'fluid';
+
+    // Canvas references
+    const glCanvas = document.getElementById('gl-canvas');
+    const overlayCanvas = document.getElementById('overlay-canvas');
+    const overlayCtx = overlayCanvas.getContext('2d');
+    const gl = glCanvas.getContext('webgl2', {
+      alpha: false,
+      depth: false,
+      stencil: false,
+      antialias: false,
+      preserveDrawingBuffer: false,
+      powerPreference: 'high-performance'
+    });
+
+    if (!gl) {
+      alert('WebGL 2.0 is required but not supported on this browser/device.');
+      throw new Error('WebGL 2 not supported');
+    }
+
+    // Required WebGL2 extensions
+    const extColorBufferFloat = gl.getExtension('EXT_color_buffer_float');
+    gl.getExtension('OES_texture_float_linear');
+
+    /* ==========================================================================
+       Offscreen Obstacle Rasterizer
+       ========================================================================== */
+    const obstacleCanvas = document.createElement('canvas');
+    obstacleCanvas.width = CONFIG.simWidth;
+    obstacleCanvas.height = CONFIG.simHeight;
+    const obstacleCtx = obstacleCanvas.getContext('2d', { willReadFrequently: false });
+
+    /* ==========================================================================
+       Obstacle Class & Geometry
+       ========================================================================== */
+    let nextObstacleId = 1;
+
+    class Obstacle {
+      constructor(type, x, y, width, height, rotation = 0) {
+        this.id = nextObstacleId++;
+        this.type = type; // 'rect' | 'circle' | 'triangle' | 'airfoil'
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.radius = width / 2;
+        this.rotation = rotation; // radians
+        this.prevX = x;
+        this.prevY = y;
+        this.vx = 0;
+        this.vy = 0;
+      }
+
+      updateVelocity(dt) {
+        if (dt > 0.001) {
+          this.vx = (this.x - this.prevX) / dt;
+          this.vy = (this.y - this.prevY) / dt;
+        } else {
+          this.vx = 0;
+          this.vy = 0;
+        }
+        this.prevX = this.x;
+        this.prevY = this.y;
+      }
+
+      // Local coordinate transform
+      toLocal(worldX, worldY) {
+        const dx = worldX - this.x;
+        const dy = worldY - this.y;
+        const cos = Math.cos(-this.rotation);
+        const sin = Math.sin(-this.rotation);
+        return {
+          x: dx * cos - dy * sin,
+          y: dx * sin + dy * cos
+        };
+      }
+
+      toWorld(localX, localY) {
+        const cos = Math.cos(this.rotation);
+        const sin = Math.sin(this.rotation);
+        return {
+          x: this.x + (localX * cos - localY * sin),
+          y: this.y + (localX * sin + localY * cos)
+        };
+      }
+
+      containsPoint(wx, wy) {
+        const local = this.toLocal(wx, wy);
+        if (this.type === 'circle') {
+          return (local.x * local.x + local.y * local.y) <= (this.radius * this.radius);
+        } else if (this.type === 'rect') {
+          return Math.abs(local.x) <= this.width / 2 && Math.abs(local.y) <= this.height / 2;
+        } else if (this.type === 'triangle') {
+          // Equilateral / Isosceles triangle pointing right or up
+          const p1 = { x: 0, y: -this.height / 2 };
+          const p2 = { x: this.width / 2, y: this.height / 2 };
+          const p3 = { x: -this.width / 2, y: this.height / 2 };
+          return pointInTriangle(local, p1, p2, p3);
+        } else if (this.type === 'airfoil') {
+          // NACA 0015 teardrop profile
+          const chord = this.width;
+          const xNorm = (local.x + chord / 2) / chord;
+          if (xNorm < 0 || xNorm > 1) return false;
+          const maxT = this.height / 2;
+          // NACA 4-digit thickness equation
+          const yHalf = maxT * 5 * (
+            0.2969 * Math.sqrt(Math.max(0, xNorm)) -
+            0.1260 * xNorm -
+            0.3516 * Math.pow(xNorm, 2) +
+            0.2843 * Math.pow(xNorm, 3) -
+            0.1015 * Math.pow(xNorm, 4)
+          );
+          return Math.abs(local.y) <= yHalf;
+        }
+        return false;
+      }
+
+      getControlHandles() {
+        const w2 = this.width / 2;
+        const h2 = this.height / 2;
+        // 4 corner handles
+        const corners = [
+          { index: 0, local: { x: -w2, y: -h2 }, sx: -1, sy: -1 }, // TL
+          { index: 1, local: { x:  w2, y: -h2 }, sx:  1, sy: -1 }, // TR
+          { index: 2, local: { x:  w2, y:  h2 }, sx:  1, sy:  1 }, // BR
+          { index: 3, local: { x: -w2, y:  h2 }, sx: -1, sy:  1 }  // BL
+        ].map(c => ({
+          ...c,
+          world: this.toWorld(c.local.x, c.local.y)
+        }));
+
+        // Rotation handle protruding from top
+        const rotLocal = { x: 0, y: -h2 - (32 / getWorldScale()) };
+        const rotWorld = this.toWorld(rotLocal.x, rotLocal.y);
+        const rotStemTop = this.toWorld(0, -h2);
+
+        return { corners, rotWorld, rotStemTop };
+      }
+
+      drawShape(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+
+        if (this.type === 'rect') {
+          ctx.beginPath();
+          ctx.roundRect(-this.width / 2, -this.height / 2, this.width, this.height, 6);
+          ctx.fill();
+        } else if (this.type === 'circle') {
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (this.type === 'triangle') {
+          ctx.beginPath();
+          ctx.moveTo(0, -this.height / 2);
+          ctx.lineTo(this.width / 2, this.height / 2);
+          ctx.lineTo(-this.width / 2, this.height / 2);
+          ctx.closePath();
+          ctx.fill();
+        } else if (this.type === 'airfoil') {
+          const chord = this.width;
+          const maxT = this.height / 2;
+          ctx.beginPath();
+          const steps = 30;
+          // Upper surface
+          for (let i = 0; i <= steps; i++) {
+            const xNorm = i / steps;
+            const x = (xNorm - 0.5) * chord;
+            const y = -maxT * 5 * (
+              0.2969 * Math.sqrt(Math.max(0, xNorm)) -
+              0.1260 * xNorm -
+              0.3516 * Math.pow(xNorm, 2) +
+              0.2843 * Math.pow(xNorm, 3) -
+              0.1015 * Math.pow(xNorm, 4)
+            );
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          // Lower surface
+          for (let i = steps; i >= 0; i--) {
+            const xNorm = i / steps;
+            const x = (xNorm - 0.5) * chord;
+            const y = maxT * 5 * (
+              0.2969 * Math.sqrt(Math.max(0, xNorm)) -
+              0.1260 * xNorm -
+              0.3516 * Math.pow(xNorm, 2) +
+              0.2843 * Math.pow(xNorm, 3) -
+              0.1015 * Math.pow(xNorm, 4)
+            );
+            ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    function pointInTriangle(pt, v1, v2, v3) {
+      const d1 = sign(pt, v1, v2);
+      const d2 = sign(pt, v2, v3);
+      const d3 = sign(pt, v3, v1);
+      const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+      const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+      return !(hasNeg && hasPos);
+    }
+
+    function sign(p1, p2, p3) {
+      return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    }
+
+    // List of active obstacles in the world
+    let obstacles = [];
+    let selectedObstacle = null;
+
+    /* ==========================================================================
+       Shader Programs & WebGL2 Utilities
+       ========================================================================== */
+    function createShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const info = gl.getShaderInfoLog(shader);
+        gl.deleteShader(shader);
+        throw new Error('Shader compilation error: ' + info);
+      }
+      return shader;
+    }
+
+    function createProgram(gl, vsSource, fsSource) {
+      const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+      const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+      const program = gl.createProgram();
+      gl.attachShader(program, vs);
+      gl.attachShader(program, fs);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const info = gl.getProgramInfoLog(program);
+        gl.deleteProgram(program);
+        throw new Error('Program link error: ' + info);
+      }
+      return program;
+    }
+
+    // Full-screen Quad Vertex Shader
+    const baseVS = `#version 300 es
+    precision highp float;
+    in vec2 aPosition;
+    out vec2 vUV;
+    void main() {
+      vUV = aPosition * 0.5 + 0.5;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }`;
+
+    // Splat (Force / Dye Injection) Shader
+    const splatFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uTarget;
+    uniform sampler2D uObstacle;
+    uniform vec2 uPoint;
+    uniform vec3 uColor;
+    uniform float uRadius;
+    uniform float uAspectRatio;
+    out vec4 fragColor;
+    void main() {
+      vec4 obs = texture(uObstacle, vUV);
+      if (obs.r > 0.5) {
+        fragColor = texture(uTarget, vUV);
+        return;
+      }
+      vec2 p = vUV - uPoint;
+      p.x *= uAspectRatio;
+      vec3 splat = uColor * exp(-dot(p, p) / (uRadius * uRadius));
+      vec4 base = texture(uTarget, vUV);
+      fragColor = vec4(base.rgb + splat, base.a);
+    }`;
+
+    // Curl (Vorticity) Calculation Shader
+    const curlFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uVelocity;
+    uniform vec2 uTexelSize;
+    out vec4 fragColor;
+    void main() {
+      float L = texture(uVelocity, vUV - vec2(uTexelSize.x, 0.0)).y;
+      float R = texture(uVelocity, vUV + vec2(uTexelSize.x, 0.0)).y;
+      float B = texture(uVelocity, vUV - vec2(0.0, uTexelSize.y)).x;
+      float T = texture(uVelocity, vUV + vec2(0.0, uTexelSize.y)).x;
+      float vorticity = 0.5 * ((R - L) - (T - B));
+      fragColor = vec4(vorticity, 0.0, 0.0, 1.0);
+    }`;
+
+    // Vorticity Confinement Shader
+    const vorticityFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uCurl;
+    uniform sampler2D uObstacle;
+    uniform vec2 uTexelSize;
+    uniform float uCurlStrength;
+    uniform float uDT;
+    out vec4 fragColor;
+    void main() {
+      vec4 obs = texture(uObstacle, vUV);
+      if (obs.r > 0.5) {
+        fragColor = texture(uVelocity, vUV);
+        return;
+      }
+      float L = abs(texture(uCurl, vUV - vec2(uTexelSize.x, 0.0)).x);
+      float R = abs(texture(uCurl, vUV + vec2(uTexelSize.x, 0.0)).x);
+      float B = abs(texture(uCurl, vUV - vec2(0.0, uTexelSize.y)).x);
+      float T = abs(texture(uCurl, vUV + vec2(0.0, uTexelSize.y)).x);
+      float C = texture(uCurl, vUV).x;
+
+      vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+      float len = length(force) + 1e-5;
+      force = (force / len) * vec2(1.0, -1.0) * C * uCurlStrength;
+      // Prevent sharp inflow/obstacle gradients from becoming isolated
+      // full-screen-sized velocity impulses.
+      float forceMagnitude = length(force);
+      force *= min(1.0, 120.0 / max(forceMagnitude, 1e-5));
+
+      vec2 vel = texture(uVelocity, vUV).xy;
+      fragColor = vec4(vel + force * uDT, 0.0, 1.0);
+    }`;
+
+    // Divergence Shader with Solid Boundary Conditions
+    const divergenceFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uObstacle;
+    uniform vec2 uTexelSize;
+    out vec4 fragColor;
+    void main() {
+      vec4 obsC = texture(uObstacle, vUV);
+      if (obsC.r > 0.5) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      vec2 d = uTexelSize;
+      // Open outlet on the right boundary. This keeps fluid moving out while
+      // preventing backflow from ghost cells outside the domain.
+      if (vUV.x > 1.0 - 4.0 * d.x) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      vec4 obsR = texture(uObstacle, vUV + vec2(d.x, 0.0));
+      vec4 obsL = texture(uObstacle, vUV - vec2(d.x, 0.0));
+      vec4 obsT = texture(uObstacle, vUV + vec2(0.0, d.y));
+      vec4 obsB = texture(uObstacle, vUV - vec2(0.0, d.y));
+
+      float uR = obsR.r > 0.5 ? (obsR.g * 2.0 - 1.0) : texture(uVelocity, vUV + vec2(d.x, 0.0)).x;
+      float uL = obsL.r > 0.5 ? (obsL.g * 2.0 - 1.0) : texture(uVelocity, vUV - vec2(d.x, 0.0)).x;
+      float vT = obsT.r > 0.5 ? (obsT.b * 2.0 - 1.0) : texture(uVelocity, vUV + vec2(0.0, d.y)).y;
+      float vB = obsB.r > 0.5 ? (obsB.b * 2.0 - 1.0) : texture(uVelocity, vUV - vec2(0.0, d.y)).y;
+
+      float div = 0.5 * (uR - uL + vT - vB);
+      fragColor = vec4(div, 0.0, 0.0, 1.0);
+    }`;
+
+    // Pressure Poisson (Jacobi) Solver with Neumann Boundary Conditions
+    const pressureFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uPressure;
+    uniform sampler2D uDivergence;
+    uniform sampler2D uObstacle;
+    uniform vec2 uTexelSize;
+    out vec4 fragColor;
+    void main() {
+      vec4 obsC = texture(uObstacle, vUV);
+      if (obsC.r > 0.5) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      vec2 d = uTexelSize;
+      // Treat the outlet as a free, zero-gradient boundary so pressure can
+      // dissipate instead of reflecting back into the fluid domain.
+      if (vUV.x > 1.0 - 4.0 * d.x) {
+        fragColor = vec4(texture(uPressure, vUV).x, 0.0, 0.0, 1.0);
+        return;
+      }
+      float pC = texture(uPressure, vUV).x;
+      float div = texture(uDivergence, vUV).x;
+
+      vec4 obsR = texture(uObstacle, vUV + vec2(d.x, 0.0));
+      vec4 obsL = texture(uObstacle, vUV - vec2(d.x, 0.0));
+      vec4 obsT = texture(uObstacle, vUV + vec2(0.0, d.y));
+      vec4 obsB = texture(uObstacle, vUV - vec2(0.0, d.y));
+
+      float pR = obsR.r > 0.5 ? pC : texture(uPressure, vUV + vec2(d.x, 0.0)).x;
+      float pL = obsL.r > 0.5 ? pC : texture(uPressure, vUV - vec2(d.x, 0.0)).x;
+      float pT = obsT.r > 0.5 ? pC : texture(uPressure, vUV + vec2(0.0, d.y)).x;
+      float pB = obsB.r > 0.5 ? pC : texture(uPressure, vUV - vec2(0.0, d.y)).x;
+
+      float pNew = 0.25 * (pL + pR + pB + pT - div);
+      fragColor = vec4(pNew, 0.0, 0.0, 1.0);
+    }`;
+
+    // Gradient Subtraction / Projection Shader
+    const projectFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uPressure;
+    uniform sampler2D uObstacle;
+    uniform vec2 uTexelSize;
+    out vec4 fragColor;
+    void main() {
+      vec4 obsC = texture(uObstacle, vUV);
+      if (obsC.r > 0.5) {
+        fragColor = vec4(obsC.gb * 2.0 - 1.0, 0.0, 1.0);
+        return;
+      }
+      vec2 d = uTexelSize;
+      vec2 vel = texture(uVelocity, vUV).xy;
+      if (vUV.x > 1.0 - 4.0 * d.x) {
+        // Open outlet: let the flow leave the domain but stop any re-entry.
+        vel.x = max(vel.x, 0.0);
+        fragColor = vec4(vel, 0.0, 1.0);
+        return;
+      }
+      float pC = texture(uPressure, vUV).x;
+
+      vec4 obsR = texture(uObstacle, vUV + vec2(d.x, 0.0));
+      vec4 obsL = texture(uObstacle, vUV - vec2(d.x, 0.0));
+      vec4 obsT = texture(uObstacle, vUV + vec2(0.0, d.y));
+      vec4 obsB = texture(uObstacle, vUV - vec2(0.0, d.y));
+
+      float pR = obsR.r > 0.5 ? pC : texture(uPressure, vUV + vec2(d.x, 0.0)).x;
+      float pL = obsL.r > 0.5 ? pC : texture(uPressure, vUV - vec2(d.x, 0.0)).x;
+      float pT = obsT.r > 0.5 ? pC : texture(uPressure, vUV + vec2(0.0, d.y)).x;
+      float pB = obsB.r > 0.5 ? pC : texture(uPressure, vUV - vec2(0.0, d.y)).x;
+
+      vec2 gradP = 0.5 * vec2(pR - pL, pT - pB);
+      vel = vel - gradP;
+
+      // Solid obstacle boundary slip / no-penetration enforcement
+      if (obsR.r > 0.5 && vel.x > 0.0) vel.x = obsR.g * 2.0 - 1.0;
+      if (obsL.r > 0.5 && vel.x < 0.0) vel.x = obsL.g * 2.0 - 1.0;
+      if (obsT.r > 0.5 && vel.y > 0.0) vel.y = obsT.b * 2.0 - 1.0;
+      if (obsB.r > 0.5 && vel.y < 0.0) vel.y = obsB.b * 2.0 - 1.0;
+
+      fragColor = vec4(vel, 0.0, 1.0);
+    }`;
+
+    // Semi-Lagrangian Advection Shader
+    const advectFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uSource;
+    uniform sampler2D uObstacle;
+    uniform vec2 uTexelSize;
+    uniform float uDT;
+    uniform float uDissipation;
+    out vec4 fragColor;
+    void main() {
+      vec4 obs = texture(uObstacle, vUV);
+      if (obs.r > 0.5) {
+        fragColor = vec4(obs.gb * 2.0 - 1.0, 0.0, 0.0);
+        return;
+      }
+      vec2 vel = texture(uVelocity, vUV).xy;
+      vec2 coord = vUV - vel * uDT * uTexelSize;
+      // Do not let CLAMP_TO_EDGE turn fluid that has left the domain into
+      // a persistent copy of the boundary cell.
+      if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      // The right edge is the open outlet. Clear a small destination strip
+      // and avoid sampling from it so interior advection does not pull
+      // persistent boundary values back into the domain.
+      if (vUV.x > 1.0 - 4.0 * uTexelSize.x) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      if (coord.x > 1.0 - 4.0 * uTexelSize.x) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      vec4 result = texture(uSource, coord);
+      fragColor = result * uDissipation;
+    }`;
+
+    // Viscous & Dye Diffusion (Jacobi) Shader
+    const diffuseFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uX;
+    uniform sampler2D uX0;
+    uniform sampler2D uObstacle;
+    uniform vec2 uTexelSize;
+    uniform float uAlpha;
+    uniform float uBeta;
+    out vec4 fragColor;
+    void main() {
+      vec4 obs = texture(uObstacle, vUV);
+      if (obs.r > 0.5) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      vec2 d = uTexelSize;
+      vec4 xL = texture(uX, vUV - vec2(d.x, 0.0));
+      vec4 xR = texture(uX, vUV + vec2(d.x, 0.0));
+      vec4 xB = texture(uX, vUV - vec2(0.0, d.y));
+      vec4 xT = texture(uX, vUV + vec2(0.0, d.y));
+      vec4 x0 = texture(uX0, vUV);
+      fragColor = (xL + xR + xB + xT + uAlpha * x0) / uBeta;
+    }`;
+
+    // Wind Tunnel Laminar Inflow & Streamlines Shader
+    const inflowFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uTarget;
+    uniform sampler2D uObstacle;
+    // uSpeed is expressed in simulation cells per second.
+    uniform float uSpeed;
+    uniform int uMode; // 0: Velocity, 1: Dye
+    uniform int uPalette;
+    out vec4 fragColor;
+    void main() {
+      vec4 cur = texture(uTarget, vUV);
+      vec4 obs = texture(uObstacle, vUV);
+      if (obs.r > 0.5) {
+        fragColor = cur;
+        return;
+      }
+      if (vUV.x < 0.02) {
+        if (uMode == 0) {
+          // Continuous laminar horizontal airflow
+          fragColor = vec4(uSpeed, 0.0, 0.0, 1.0);
+        } else {
+          // Crisp aerodynamic smoke streamer ribbons
+          float numRibbons = 12.0;
+          float f = fract(vUV.y * numRibbons);
+          float ribbon = smoothstep(0.42, 0.48, f) * (1.0 - smoothstep(0.52, 0.58, f));
+          vec3 streamColor = vec3(0.0, 0.95, 1.0);
+          if (uPalette == 1) streamColor = vec3(1.0, 0.45, 0.1);
+          else if (uPalette == 2) streamColor = vec3(0.8, 0.2, 1.0);
+          else if (uPalette == 3) streamColor = vec3(1.0, 0.2, 0.3);
+          else if (uPalette == 4) streamColor = vec3(0.9, 0.95, 1.0);
+          fragColor = mix(cur, vec4(streamColor * 1.6, 1.0), ribbon * 0.95);
+        }
+      } else {
+        fragColor = cur;
+      }
+    }
+    `;
+
+    // Hybrid compressible Euler transport. Density and total energy are
+    // advected explicitly; velocity receives the corresponding pressure force.
+    const compressibleFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uTarget;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uDensity;
+    uniform sampler2D uEnergy;
+    uniform sampler2D uObstacle;
+    uniform vec2 uTexelSize;
+    uniform float uDT;
+    uniform float uSpeed;
+    uniform float uGamma;
+    uniform int uMode; // 0: velocity, 1: density, 2: energy
+    out vec4 fragColor;
+
+    float pressureAt(vec2 uv) {
+      return max(0.0, (uGamma - 1.0) * texture(uEnergy, uv).x);
+    }
+
+    void main() {
+      vec4 obs = texture(uObstacle, vUV);
+      if (obs.r > 0.5) {
+        fragColor = uMode == 0 ? vec4(obs.gb * 2.0 - 1.0, 0.0, 1.0) : vec4(texture(uTarget, vUV).x, 0.0, 0.0, 1.0);
+        return;
+      }
+
+      if (vUV.x < 0.02) {
+        if (uMode == 0) fragColor = vec4(uSpeed, 0.0, 0.0, 1.0);
+        else if (uMode == 1) fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        else fragColor = vec4(1.0 / (uGamma - 1.0), 0.0, 0.0, 1.0);
+        return;
+      }
+
+      vec2 velocity = texture(uVelocity, vUV).xy;
+      vec2 coord = clamp(vUV - velocity * uDT * uTexelSize, 0.0, 1.0);
+      if (uMode != 0) {
+        float transported = texture(uTarget, coord).x;
+        fragColor = vec4(max(0.0, transported), 0.0, 0.0, 1.0);
+        return;
+      }
+
+      vec2 d = uTexelSize;
+      float rho = max(0.05, texture(uDensity, vUV).x);
+      float pL = pressureAt(vUV - vec2(d.x, 0.0));
+      float pR = pressureAt(vUV + vec2(d.x, 0.0));
+      float pB = pressureAt(vUV - vec2(0.0, d.y));
+      float pT = pressureAt(vUV + vec2(0.0, d.y));
+      vec2 pressureGradient = 0.5 * vec2(pR - pL, pT - pB);
+      fragColor = vec4(velocity - uDT * pressureGradient / rho, 0.0, 1.0);
+    }
+    `;
+
+    // Render / Display Shader
+    const displayFS = `#version 300 es
+    precision highp float;
+    in vec2 vUV;
+    uniform sampler2D uDye;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uPressure;
+    uniform sampler2D uCurl;
+    uniform sampler2D uObstacle;
+    uniform vec2 uTexelSize;
+    uniform int uDisplayMode;
+    uniform int uPalette;
+    out vec4 fragColor;
+
+    vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+      return a + b * cos(6.28318 * (c * t + d));
+    }
+
+    vec3 turboColor(float t) {
+      t = clamp(t, 0.0, 1.0);
+      return palette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(1.0, 1.0, 1.0), vec3(0.0, 0.33, 0.67));
+    }
+
+    void main() {
+      vec4 obs = texture(uObstacle, vUV);
+
+      // Render solid obstacle with sleek metallic bevel and glowing outline
+      if (obs.r > 0.5) {
+        vec2 d = uTexelSize;
+        float oR = texture(uObstacle, vUV + vec2(d.x, 0.0)).r;
+        float oL = texture(uObstacle, vUV - vec2(d.x, 0.0)).r;
+        float oT = texture(uObstacle, vUV + vec2(0.0, d.y)).r;
+        float oB = texture(uObstacle, vUV - vec2(0.0, d.y)).r;
+        float edge = length(vec2(oR - oL, oT - oB));
+
+        vec3 obsBase = vec3(0.10, 0.13, 0.19);
+        if (edge > 0.1) {
+          // Glowing border rim
+          fragColor = vec4(vec3(0.15, 0.75, 1.0), 1.0);
+        } else {
+          // Inner obstacle metallic shading
+          fragColor = vec4(obsBase, 1.0);
+        }
+        return;
+      }
+
+      vec3 color = vec3(0.0);
+
+      if (uDisplayMode == 0) {
+        // Smoke Dye Mode
+        vec3 dye = texture(uDye, vUV).rgb;
+        if (uPalette == 0) {
+          // Cyan / Electric Blue
+          color = dye * vec3(0.1, 0.8, 1.1) + pow(dye, vec3(2.5)) * 0.4;
+        } else if (uPalette == 1) {
+          // Solar Fire
+          color = vec3(dye.r * 1.5, dye.r * 0.5 + dye.g * 0.5, dye.b * 0.1);
+        } else if (uPalette == 2) {
+          // Ultraviolet
+          color = dye * vec3(0.9, 0.2, 1.3);
+        } else if (uPalette == 3) {
+          // Thermal Heat
+          float l = length(dye);
+          color = turboColor(l * 0.8);
+        } else {
+          // Pure White Smoke
+          color = dye * 1.1;
+        }
+      } else if (uDisplayMode == 1) {
+        // Velocity Magnitude Field
+        vec2 vel = texture(uVelocity, vUV).xy;
+        float speed = length(vel) * 0.015;
+        color = turboColor(speed);
+      } else if (uDisplayMode == 2) {
+        // Pressure Contours Field
+        float p = texture(uPressure, vUV).x;
+        float normP = clamp(p * 0.15 + 0.5, 0.0, 1.0);
+        // Cool-warm colormap: blue = low pressure wake, red = stagnation high pressure
+        color = mix(vec3(0.05, 0.3, 0.9), vec3(0.95, 0.2, 0.1), normP);
+      } else if (uDisplayMode == 3) {
+        // Vorticity (Vortex Shedding)
+        float c = texture(uCurl, vUV).x * 0.2;
+        vec3 cw = vec3(0.1, 0.6, 1.0) * max(0.0, c);
+        vec3 ccw = vec3(1.0, 0.3, 0.1) * max(0.0, -c);
+        color = cw + ccw;
+      }
+
+      // Atmospheric dark background vignette
+      vec2 vig = (vUV - 0.5) * 1.4;
+      float vignette = 1.0 - dot(vig, vig) * 0.25;
+      fragColor = vec4(color * vignette, 1.0);
+    }`;
+
+    // Compile programs
+    const progSplat = createProgram(gl, baseVS, splatFS);
+    const progCurl = createProgram(gl, baseVS, curlFS);
+    const progVorticity = createProgram(gl, baseVS, vorticityFS);
+    const progDivergence = createProgram(gl, baseVS, divergenceFS);
+    const progPressure = createProgram(gl, baseVS, pressureFS);
+    const progProject = createProgram(gl, baseVS, projectFS);
+    const progAdvect = createProgram(gl, baseVS, advectFS);
+    const progDiffuse = createProgram(gl, baseVS, diffuseFS);
+    const progInflow = createProgram(gl, baseVS, inflowFS);
+    const progCompressible = createProgram(gl, baseVS, compressibleFS);
+    const progDisplay = createProgram(gl, baseVS, displayFS);
+
+    // Quad VAO
+    const quadVAO = gl.createVertexArray();
+    gl.bindVertexArray(quadVAO);
+    const quadVBO = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1,
+       1, -1,
+      -1,  1,
+      -1,  1,
+       1, -1,
+       1,  1
+    ]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    /* ==========================================================================
+       Framebuffer & Texture Architecture
+       ========================================================================== */
+    function createFBO(w, h, internalFormat, format, type, filter) {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+      const fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      return { tex, fbo, width: w, height: h };
+    }
+
+    function createDoubleFBO(w, h, internalFormat, format, type, filter) {
+      let fbo1 = createFBO(w, h, internalFormat, format, type, filter);
+      let fbo2 = createFBO(w, h, internalFormat, format, type, filter);
+      return {
+        get read() { return fbo1; },
+        get write() { return fbo2; },
+        swap() { const tmp = fbo1; fbo1 = fbo2; fbo2 = tmp; }
+      };
+    }
+
+    const simW = CONFIG.simWidth;
+    const simH = CONFIG.simHeight;
+
+    function getDomainHeight() {
+      return CONFIG.domainWidth * glCanvas.clientHeight / Math.max(glCanvas.clientWidth, 1);
+    }
+
+    function getWorldScale() {
+      return glCanvas.clientWidth / Math.max(CONFIG.domainWidth, 1e-6);
+    }
+
+    function getMetersPerSimulationCell() {
+      return CONFIG.domainWidth / simW;
+    }
+
+    function screenToWorld(x, y) {
+      const scale = getWorldScale();
+      return { x: x / scale, y: y / scale };
+    }
+
+    function worldToScreen(x, y) {
+      const scale = getWorldScale();
+      return { x: x * scale, y: y * scale };
+    }
+
+    // Simulation Buffers (Double-buffered for ping-pong)
+    let velocity = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+    let dye = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+    let density = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+    let energy = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+    let pressure = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
+    let divergence = createFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
+    let curl = createFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
+
+    // Obstacle Texture (RGBA8)
+    const obstacleTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, simW, simH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    /* ==========================================================================
+       Obstacle Boundary Grid Rasterization
+       ========================================================================== */
+    function updateObstacles(dt) {
+      // Clear obstacle canvas with black (0, 0, 0, 0)
+      obstacleCtx.fillStyle = 'black';
+      obstacleCtx.fillRect(0, 0, simW, simH);
+
+      const scaleX = simW / CONFIG.domainWidth;
+      const scaleY = simH / getDomainHeight();
+
+      for (const obj of obstacles) {
+        obj.updateVelocity(dt);
+
+        obstacleCtx.save();
+        // Transform to sim coordinates
+        obstacleCtx.translate(obj.x * scaleX, (getDomainHeight() - obj.y) * scaleY);
+        obstacleCtx.rotate(-obj.rotation);
+
+        // Encode obstacle: Red = 255 (solid), Green = Vx, Blue = -Vy (y-inverted)
+        const vxNorm = Math.max(0, Math.min(255, Math.round(128 + obj.vx * 0.15)));
+        const vyNorm = Math.max(0, Math.min(255, Math.round(128 - obj.vy * 0.15)));
+        obstacleCtx.fillStyle = `rgb(255, ${vxNorm}, ${vyNorm})`;
+
+        const w = obj.width * scaleX;
+        const h = obj.height * scaleY;
+
+        if (obj.type === 'rect') {
+          obstacleCtx.beginPath();
+          obstacleCtx.rect(-w / 2, -h / 2, w, h);
+          obstacleCtx.fill();
+        } else if (obj.type === 'circle') {
+          obstacleCtx.beginPath();
+          obstacleCtx.arc(0, 0, obj.radius * scaleX, 0, Math.PI * 2);
+          obstacleCtx.fill();
+        } else if (obj.type === 'triangle') {
+          obstacleCtx.beginPath();
+          obstacleCtx.moveTo(0, h / 2);
+          obstacleCtx.lineTo(w / 2, -h / 2);
+          obstacleCtx.lineTo(-w / 2, -h / 2);
+          obstacleCtx.closePath();
+          obstacleCtx.fill();
+        } else if (obj.type === 'airfoil') {
+          const chord = w;
+          const maxT = h / 2;
+          obstacleCtx.beginPath();
+          const steps = 32;
+          for (let i = 0; i <= steps; i++) {
+            const xN = i / steps;
+            const x = (xN - 0.5) * chord;
+            const y = maxT * 5 * (
+              0.2969 * Math.sqrt(Math.max(0, xN)) -
+              0.1260 * xN -
+              0.3516 * Math.pow(xN, 2) +
+              0.2843 * Math.pow(xN, 3) -
+              0.1015 * Math.pow(xN, 4)
+            );
+            if (i === 0) obstacleCtx.moveTo(x, y);
+            else obstacleCtx.lineTo(x, y);
+          }
+          for (let i = steps; i >= 0; i--) {
+            const xN = i / steps;
+            const x = (xN - 0.5) * chord;
+            const y = -maxT * 5 * (
+              0.2969 * Math.sqrt(Math.max(0, xN)) -
+              0.1260 * xN -
+              0.3516 * Math.pow(xN, 2) +
+              0.2843 * Math.pow(xN, 3) -
+              0.1015 * Math.pow(xN, 4)
+            );
+            obstacleCtx.lineTo(x, y);
+          }
+          obstacleCtx.closePath();
+          obstacleCtx.fill();
+        }
+
+        obstacleCtx.restore();
+      }
+
+      // Upload obstacle canvas into WebGL obstacle texture
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, obstacleCanvas);
+    }
+
+    /* ==========================================================================
+       Fluid Simulation Step (Navier-Stokes Solver)
+       ========================================================================== */
+    function renderStep(program, targetFBO) {
+      gl.useProgram(program);
+      if (targetFBO) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, targetFBO.fbo);
+        gl.viewport(0, 0, targetFBO.width, targetFBO.height);
+      } else {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+      }
+      gl.bindVertexArray(quadVAO);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    function getInflowMach() {
+      return Math.max(0, CONFIG.inflowSpeed) / AIR.speedOfSoundMetersPerSecond;
+    }
+
+    function shouldUseCompressibleSolver() {
+      return CONFIG.solverMode === 'compressible' ||
+        (CONFIG.solverMode === 'auto' && getInflowMach() >= CONFIG.machSwitch);
+    }
+
+    function stepCompressible(dt) {
+      const texelSize = [1.0 / simW, 1.0 / simH];
+      const inflowSpeed = Math.min(Math.max(CONFIG.inflowSpeed, 0), MAX_INFLOW_SPEED) /
+        getMetersPerSimulationCell();
+
+      gl.useProgram(progCompressible);
+      gl.uniform1i(gl.getUniformLocation(progCompressible, 'uTarget'), 0);
+      gl.uniform1i(gl.getUniformLocation(progCompressible, 'uVelocity'), 1);
+      gl.uniform1i(gl.getUniformLocation(progCompressible, 'uDensity'), 2);
+      gl.uniform1i(gl.getUniformLocation(progCompressible, 'uEnergy'), 3);
+      gl.uniform1i(gl.getUniformLocation(progCompressible, 'uObstacle'), 4);
+      gl.uniform2f(gl.getUniformLocation(progCompressible, 'uTexelSize'), texelSize[0], texelSize[1]);
+      gl.uniform1f(gl.getUniformLocation(progCompressible, 'uDT'), dt);
+      gl.uniform1f(gl.getUniformLocation(progCompressible, 'uSpeed'), inflowSpeed);
+      gl.uniform1f(gl.getUniformLocation(progCompressible, 'uGamma'), CONFIG.gamma);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, density.read.tex);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, energy.read.tex);
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+      // Update velocity from the compressible pressure field.
+      gl.uniform1i(gl.getUniformLocation(progCompressible, 'uMode'), 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      renderStep(progCompressible, velocity.write);
+      velocity.swap();
+
+      // Advect density.
+      gl.uniform1i(gl.getUniformLocation(progCompressible, 'uMode'), 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, density.read.tex);
+      renderStep(progCompressible, density.write);
+      density.swap();
+
+      // Advect total energy.
+      gl.uniform1i(gl.getUniformLocation(progCompressible, 'uMode'), 2);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, energy.read.tex);
+      renderStep(progCompressible, energy.write);
+      energy.swap();
+    }
+
+    function stepFluid(dt) {
+      if (CONFIG.paused) return;
+
+      const texelSize = [1.0 / simW, 1.0 / simH];
+      const useCompressibleSolver = shouldUseCompressibleSolver();
+
+      // 1. Continuous Inflow (Wind Tunnel mode)
+      if (CONFIG.inflow && !useCompressibleSolver) {
+        const inflowSpeed = Math.min(Math.max(CONFIG.inflowSpeed, 0), MAX_INFLOW_SPEED);
+        CONFIG.inflowSpeed = inflowSpeed;
+
+        // Velocity inflow
+        gl.useProgram(progInflow);
+        gl.uniform1i(gl.getUniformLocation(progInflow, 'uTarget'), 0);
+        gl.uniform1i(gl.getUniformLocation(progInflow, 'uObstacle'), 1);
+        gl.uniform1f(
+          gl.getUniformLocation(progInflow, 'uSpeed'),
+          inflowSpeed / getMetersPerSimulationCell()
+        );
+        gl.uniform1i(gl.getUniformLocation(progInflow, 'uMode'), 0);
+        gl.uniform1i(gl.getUniformLocation(progInflow, 'uPalette'), CONFIG.palette);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+        renderStep(progInflow, velocity.write);
+        velocity.swap();
+
+        // Dye Streamlines inflow
+        if (CONFIG.streamlines) {
+          gl.uniform1i(gl.getUniformLocation(progInflow, 'uMode'), 1);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
+
+          renderStep(progInflow, dye.write);
+          dye.swap();
+        }
+      }
+
+      if (CONFIG.inflow && useCompressibleSolver) {
+        stepCompressible(dt);
+      }
+
+      // 2. Vorticity Confinement (Turbulent swirling vortex preservation)
+      if (CONFIG.vorticity > 0.1) {
+        // Compute curl
+        gl.useProgram(progCurl);
+        gl.uniform1i(gl.getUniformLocation(progCurl, 'uVelocity'), 0);
+        gl.uniform2f(gl.getUniformLocation(progCurl, 'uTexelSize'), texelSize[0], texelSize[1]);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+        renderStep(progCurl, curl);
+
+        // Apply vorticity force
+        gl.useProgram(progVorticity);
+        gl.uniform1i(gl.getUniformLocation(progVorticity, 'uVelocity'), 0);
+        gl.uniform1i(gl.getUniformLocation(progVorticity, 'uCurl'), 1);
+        gl.uniform1i(gl.getUniformLocation(progVorticity, 'uObstacle'), 2);
+        gl.uniform2f(gl.getUniformLocation(progVorticity, 'uTexelSize'), texelSize[0], texelSize[1]);
+        gl.uniform1f(gl.getUniformLocation(progVorticity, 'uCurlStrength'), CONFIG.vorticity);
+        gl.uniform1f(gl.getUniformLocation(progVorticity, 'uDT'), dt);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, curl.tex);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+        renderStep(progVorticity, velocity.write);
+        velocity.swap();
+      }
+
+      // 3. Viscous Diffusion for Velocity (optional when viscosity > 0)
+      if (CONFIG.viscosity > 0.0005) {
+        const alpha = (1.0 / texelSize[0]) * (1.0 / texelSize[0]) / (CONFIG.viscosity * dt);
+        const beta = 4.0 + alpha;
+
+        gl.useProgram(progDiffuse);
+        gl.uniform1i(gl.getUniformLocation(progDiffuse, 'uX'), 0);
+        gl.uniform1i(gl.getUniformLocation(progDiffuse, 'uX0'), 1);
+        gl.uniform1i(gl.getUniformLocation(progDiffuse, 'uObstacle'), 2);
+        gl.uniform2f(gl.getUniformLocation(progDiffuse, 'uTexelSize'), texelSize[0], texelSize[1]);
+        gl.uniform1f(gl.getUniformLocation(progDiffuse, 'uAlpha'), alpha);
+        gl.uniform1f(gl.getUniformLocation(progDiffuse, 'uBeta'), beta);
+
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+        for (let i = 0; i < CONFIG.viscosityIterations; i++) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+          renderStep(progDiffuse, velocity.write);
+          velocity.swap();
+        }
+      }
+
+      // 4. Divergence Calculation with Obstacle Boundaries
+      gl.useProgram(progDivergence);
+      gl.uniform1i(gl.getUniformLocation(progDivergence, 'uVelocity'), 0);
+      gl.uniform1i(gl.getUniformLocation(progDivergence, 'uObstacle'), 1);
+      gl.uniform2f(gl.getUniformLocation(progDivergence, 'uTexelSize'), texelSize[0], texelSize[1]);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+      renderStep(progDivergence, divergence);
+
+      // 5. Pressure Poisson Solver (Jacobi Iterations)
+      gl.useProgram(progPressure);
+      gl.uniform1i(gl.getUniformLocation(progPressure, 'uPressure'), 0);
+      gl.uniform1i(gl.getUniformLocation(progPressure, 'uDivergence'), 1);
+      gl.uniform1i(gl.getUniformLocation(progPressure, 'uObstacle'), 2);
+      gl.uniform2f(gl.getUniformLocation(progPressure, 'uTexelSize'), texelSize[0], texelSize[1]);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, divergence.tex);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+      for (let i = 0; i < CONFIG.pressureIterations; i++) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
+        renderStep(progPressure, pressure.write);
+        pressure.swap();
+      }
+
+      // 6. Gradient Subtraction / Velocity Projection
+      gl.useProgram(progProject);
+      gl.uniform1i(gl.getUniformLocation(progProject, 'uVelocity'), 0);
+      gl.uniform1i(gl.getUniformLocation(progProject, 'uPressure'), 1);
+      gl.uniform1i(gl.getUniformLocation(progProject, 'uObstacle'), 2);
+      gl.uniform2f(gl.getUniformLocation(progProject, 'uTexelSize'), texelSize[0], texelSize[1]);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+      renderStep(progProject, velocity.write);
+      velocity.swap();
+
+      // 7. Velocity Self-Advection
+      gl.useProgram(progAdvect);
+      gl.uniform1i(gl.getUniformLocation(progAdvect, 'uVelocity'), 0);
+      gl.uniform1i(gl.getUniformLocation(progAdvect, 'uSource'), 1);
+      gl.uniform1i(gl.getUniformLocation(progAdvect, 'uObstacle'), 2);
+      gl.uniform2f(gl.getUniformLocation(progAdvect, 'uTexelSize'), texelSize[0], texelSize[1]);
+      gl.uniform1f(gl.getUniformLocation(progAdvect, 'uDT'), dt);
+      gl.uniform1f(gl.getUniformLocation(progAdvect, 'uDissipation'), CONFIG.velDissipation);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+      renderStep(progAdvect, velocity.write);
+      velocity.swap();
+
+      // 8. Dye Advection
+      gl.uniform1f(gl.getUniformLocation(progAdvect, 'uDissipation'), CONFIG.dissipation);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+      renderStep(progAdvect, dye.write);
+      dye.swap();
+
+      // 9. Dye Diffusion (optional)
+      if (CONFIG.diffusion > 0.0001) {
+        const alphaD = (1.0 / texelSize[0]) * (1.0 / texelSize[0]) / (CONFIG.diffusion * dt);
+        const betaD = 4.0 + alphaD;
+
+        gl.useProgram(progDiffuse);
+        gl.uniform1i(gl.getUniformLocation(progDiffuse, 'uX'), 0);
+        gl.uniform1i(gl.getUniformLocation(progDiffuse, 'uX0'), 1);
+        gl.uniform1i(gl.getUniformLocation(progDiffuse, 'uObstacle'), 2);
+        gl.uniform2f(gl.getUniformLocation(progDiffuse, 'uTexelSize'), texelSize[0], texelSize[1]);
+        gl.uniform1f(gl.getUniformLocation(progDiffuse, 'uAlpha'), alphaD);
+        gl.uniform1f(gl.getUniformLocation(progDiffuse, 'uBeta'), betaD);
+
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+        for (let i = 0; i < 4; i++) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
+          renderStep(progDiffuse, dye.write);
+          dye.swap();
+        }
+      }
+    }
+
+    function renderDisplay() {
+      gl.useProgram(progDisplay);
+      gl.uniform1i(gl.getUniformLocation(progDisplay, 'uDye'), 0);
+      gl.uniform1i(gl.getUniformLocation(progDisplay, 'uVelocity'), 1);
+      gl.uniform1i(gl.getUniformLocation(progDisplay, 'uPressure'), 2);
+      gl.uniform1i(gl.getUniformLocation(progDisplay, 'uCurl'), 3);
+      gl.uniform1i(gl.getUniformLocation(progDisplay, 'uObstacle'), 4);
+      gl.uniform2f(gl.getUniformLocation(progDisplay, 'uTexelSize'), 1.0 / simW, 1.0 / simH);
+      gl.uniform1i(gl.getUniformLocation(progDisplay, 'uDisplayMode'), CONFIG.displayMode);
+      gl.uniform1i(gl.getUniformLocation(progDisplay, 'uPalette'), CONFIG.palette);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, curl.tex);
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+      renderStep(progDisplay, null);
+    }
+
+    function splat(x, y, dx, dy, color) {
+      const uX = x / glCanvas.clientWidth;
+      const uY = 1.0 - (y / glCanvas.clientHeight);
+      const aspect = glCanvas.clientWidth / glCanvas.clientHeight;
+      const rad = (CONFIG.splatRadius / glCanvas.clientHeight);
+
+      gl.useProgram(progSplat);
+      gl.uniform1i(gl.getUniformLocation(progSplat, 'uTarget'), 0);
+      gl.uniform1i(gl.getUniformLocation(progSplat, 'uObstacle'), 1);
+      gl.uniform2f(gl.getUniformLocation(progSplat, 'uPoint'), uX, uY);
+      gl.uniform1f(gl.getUniformLocation(progSplat, 'uRadius'), rad);
+      gl.uniform1f(gl.getUniformLocation(progSplat, 'uAspectRatio'), aspect);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+      // 1. Inject velocity
+      gl.uniform3f(gl.getUniformLocation(progSplat, 'uColor'), dx * 4.0, -dy * 4.0, 0.0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+      renderStep(progSplat, velocity.write);
+      velocity.swap();
+
+      // 2. Inject dye smoke
+      gl.uniform3f(gl.getUniformLocation(progSplat, 'uColor'), color[0], color[1], color[2]);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
+      renderStep(progSplat, dye.write);
+      dye.swap();
+    }
+
+    function clearFluid() {
+      // Clear velocity and dye FBOs
+      for (const target of [velocity, dye, density, energy, pressure]) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.read.fbo);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.write.fbo);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    /* ==========================================================================
+       Interaction & Object Editing Subsystem
+       ========================================================================== */
+    const pointer = {
+      isDown: false,
+      x: 0,
+      y: 0,
+      prevX: 0,
+      prevY: 0,
+      pendingDx: 0,
+      pendingDy: 0,
+      color: [0.1, 0.8, 1.0]
+    };
+
+    let dragAction = null; // { type: 'translate' | 'rotate' | 'scale', ... }
+    let hoveredHandle = null;
+
+    function getPointerPos(e) {
+      const rect = glCanvas.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    }
+
+    // Color cycle for fluid drawing
+    let colorHue = 180;
+    function getNextFluidColor() {
+      colorHue = (colorHue + 1.2) % 360;
+      const h = colorHue;
+      // Simple HSL to RGB
+      const s = 0.9, l = 0.6;
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+      const m = l - c / 2;
+      let r = 0, g = 0, b = 0;
+      if (h < 60) [r, g, b] = [c, x, 0];
+      else if (h < 120) [r, g, b] = [x, c, 0];
+      else if (h < 180) [r, g, b] = [0, c, x];
+      else if (h < 240) [r, g, b] = [0, x, c];
+      else if (h < 300) [r, g, b] = [x, 0, c];
+      else [r, g, b] = [c, 0, x];
+      return [(r + m) * 1.5, (g + m) * 1.5, (b + m) * 1.5];
+    }
+
+    // Hit-testing in object editing mode
+    function hitTestHandles(obj, px, py) {
+      const handles = obj.getControlHandles();
+      // Rotation handle knob (radius 14px hit region)
+      const dRot = Math.hypot(px - handles.rotWorld.x, py - handles.rotWorld.y);
+      if (dRot <= 14 / getWorldScale()) {
+        return { type: 'rotate', handle: handles.rotWorld };
+      }
+      // Corner scale handles (radius 10px hit region)
+      for (const corner of handles.corners) {
+        const dCorner = Math.hypot(px - corner.world.x, py - corner.world.y);
+        if (dCorner <= 10 / getWorldScale()) {
+          return { type: 'scale', corner: corner };
+        }
+      }
+      return null;
+    }
+
+    function hitTestObstacles(px, py) {
+      // Check from top to bottom
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        if (obstacles[i].containsPoint(px, py)) {
+          return obstacles[i];
+        }
+      }
+      return null;
+    }
+
+    // Pointer event listeners
+    window.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('#sidebar') || e.target.closest('#top-bar') || e.target.closest('#help-modal') || e.target.closest('#toggle-panel-btn')) {
+        return;
+      }
+
+      const pos = getPointerPos(e);
+      const worldPos = screenToWorld(pos.x, pos.y);
+      pointer.isDown = true;
+      pointer.x = pos.x;
+      pointer.y = pos.y;
+      pointer.prevX = pos.x;
+      pointer.prevY = pos.y;
+      pointer.pendingDx = 0;
+      pointer.pendingDy = 0;
+
+      if (currentMode === 'object') {
+        // If an object is already selected, check handles first
+        if (selectedObstacle) {
+          const handleHit = hitTestHandles(selectedObstacle, worldPos.x, worldPos.y);
+          if (handleHit) {
+            if (handleHit.type === 'rotate') {
+              dragAction = {
+                type: 'rotate',
+                obj: selectedObstacle,
+                startRotation: selectedObstacle.rotation,
+                startPointerAngle: Math.atan2(worldPos.y - selectedObstacle.y, worldPos.x - selectedObstacle.x)
+              };
+              return;
+            } else if (handleHit.type === 'scale') {
+              const startLocal = selectedObstacle.toLocal(worldPos.x, worldPos.y);
+              dragAction = {
+                type: 'scale',
+                obj: selectedObstacle,
+                corner: handleHit.corner,
+                startWidth: selectedObstacle.width,
+                startHeight: selectedObstacle.height,
+                startRadius: selectedObstacle.radius,
+                startLocalX: startLocal.x,
+                startLocalY: startLocal.y
+              };
+              return;
+            }
+          }
+        }
+
+        // Test clicking on obstacle body
+        const hitObj = hitTestObstacles(worldPos.x, worldPos.y);
+        if (hitObj) {
+          selectedObstacle = hitObj;
+          updateInspector();
+          dragAction = {
+            type: 'translate',
+            obj: hitObj,
+            startObjX: hitObj.x,
+            startObjY: hitObj.y,
+            startPointerX: worldPos.x,
+            startPointerY: worldPos.y
+          };
+        } else {
+          // Clicked empty canvas -> deselect
+          selectedObstacle = null;
+          updateInspector();
+          dragAction = null;
+        }
+      }
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      const pos = getPointerPos(e);
+      const dx = pos.x - pointer.x;
+      const dy = pos.y - pointer.y;
+
+      pointer.prevX = pointer.x;
+      pointer.prevY = pointer.y;
+      pointer.x = pos.x;
+      pointer.y = pos.y;
+
+      if (currentMode === 'fluid') {
+        if (pointer.isDown) {
+          pointer.pendingDx += dx;
+          pointer.pendingDy += dy;
+        }
+      } else if (currentMode === 'object') {
+        const worldPos = screenToWorld(pos.x, pos.y);
+        if (pointer.isDown && dragAction) {
+          const obj = dragAction.obj;
+
+          if (dragAction.type === 'translate') {
+            obj.x = dragAction.startObjX + (worldPos.x - dragAction.startPointerX);
+            obj.y = dragAction.startObjY + (worldPos.y - dragAction.startPointerY);
+            updateObstacles(CONFIG.dt);
+            updateInspector();
+          } else if (dragAction.type === 'rotate') {
+            const currentAngle = Math.atan2(worldPos.y - obj.y, worldPos.x - obj.x);
+            let angleDelta = currentAngle - dragAction.startPointerAngle;
+            let newAngle = dragAction.startRotation + angleDelta;
+            // Shift to snap 15 deg
+            if (e.shiftKey) {
+              const snap = Math.PI / 12;
+              newAngle = Math.round(newAngle / snap) * snap;
+            }
+            obj.rotation = newAngle;
+            updateObstacles(CONFIG.dt);
+            updateInspector();
+          } else if (dragAction.type === 'scale') {
+            const currLocal = obj.toLocal(worldPos.x, worldPos.y);
+            const deltaLX = currLocal.x - dragAction.startLocalX;
+            const deltaLY = currLocal.y - dragAction.startLocalY;
+
+            if (obj.type === 'circle') {
+              const newRadius = Math.max(12, Math.hypot(currLocal.x, currLocal.y));
+              obj.radius = newRadius;
+              obj.width = newRadius * 2;
+              obj.height = newRadius * 2;
+            } else {
+              const sx = dragAction.corner.sx;
+              const sy = dragAction.corner.sy;
+              let newW = Math.max(0.1, dragAction.startWidth + 2 * sx * deltaLX);
+              let newH = Math.max(0.1, dragAction.startHeight + 2 * sy * deltaLY);
+
+              if (e.shiftKey) {
+                // Proportional uniform scaling
+                const aspect = dragAction.startWidth / dragAction.startHeight;
+                const avgScale = (newW / dragAction.startWidth + newH / dragAction.startHeight) / 2;
+                newW = Math.max(0.1, dragAction.startWidth * avgScale);
+                newH = Math.max(24, newW / aspect);
+              }
+
+              obj.width = newW;
+              obj.height = newH;
+              obj.radius = newW / 2;
+            }
+            updateObstacles(CONFIG.dt);
+            updateInspector();
+          }
+        } else {
+          // Hover cursor update
+          updateHoverCursor(worldPos.x, worldPos.y);
+        }
+      }
+    });
+
+    function releasePointer() {
+      pointer.isDown = false;
+      pointer.pendingDx = 0;
+      pointer.pendingDy = 0;
+      dragAction = null;
+    }
+
+    window.addEventListener('pointerup', releasePointer);
+    window.addEventListener('pointercancel', releasePointer);
+
+    function updateHoverCursor(px, py) {
+      if (!selectedObstacle) {
+        const hit = hitTestObstacles(px, py);
+        document.body.style.cursor = hit ? 'move' : 'default';
+        return;
+      }
+
+      const handleHit = hitTestHandles(selectedObstacle, px, py);
+      if (handleHit) {
+        if (handleHit.type === 'rotate') {
+          document.body.style.cursor = 'crosshair';
+        } else if (handleHit.type === 'scale') {
+          document.body.style.cursor = 'nesw-resize';
+        }
+      } else if (selectedObstacle.containsPoint(px, py)) {
+        document.body.style.cursor = 'move';
+      } else {
+        const hit = hitTestObstacles(px, py);
+        document.body.style.cursor = hit ? 'move' : 'default';
+      }
+    }
+
+    /* ==========================================================================
+       Overlay Canvas Rendering (Bounding Boxes & Control Handles)
+       ========================================================================== */
+    function renderOverlay() {
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+      if (currentMode === 'object' && selectedObstacle) {
+        const obj = selectedObstacle;
+        const handles = obj.getControlHandles();
+        const scale = getWorldScale();
+
+        overlayCtx.save();
+        overlayCtx.scale(scale, scale);
+
+        // 1. Draw Oriented Bounding Box
+        overlayCtx.save();
+        overlayCtx.translate(obj.x, obj.y);
+        overlayCtx.rotate(obj.rotation);
+
+        overlayCtx.strokeStyle = '#00f2fe';
+        overlayCtx.lineWidth = 1.8 / scale;
+        overlayCtx.setLineDash([6, 4]);
+        overlayCtx.strokeRect(-obj.width / 2, -obj.height / 2, obj.width, obj.height);
+
+        // Center origin dot
+        overlayCtx.fillStyle = '#00f2fe';
+        overlayCtx.beginPath();
+        overlayCtx.arc(0, 0, 3 / scale, 0, Math.PI * 2);
+        overlayCtx.fill();
+
+        overlayCtx.restore();
+
+        // 2. Draw Rotation Handle Stem & Knob
+        overlayCtx.beginPath();
+        overlayCtx.setLineDash([]);
+        overlayCtx.strokeStyle = '#00f2fe';
+        overlayCtx.lineWidth = 2 / scale;
+        overlayCtx.moveTo(handles.rotStemTop.x, handles.rotStemTop.y);
+        overlayCtx.lineTo(handles.rotWorld.x, handles.rotWorld.y);
+        overlayCtx.stroke();
+
+        // Rotation Knob
+        overlayCtx.beginPath();
+        overlayCtx.arc(handles.rotWorld.x, handles.rotWorld.y, 8 / scale, 0, Math.PI * 2);
+        overlayCtx.fillStyle = '#ffffff';
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = '#00f2fe';
+        overlayCtx.lineWidth = 2.5 / scale;
+        overlayCtx.stroke();
+
+        // Little rotate symbol inside knob
+        overlayCtx.strokeStyle = '#031124';
+        overlayCtx.lineWidth = 1.5 / scale;
+        overlayCtx.beginPath();
+        overlayCtx.arc(handles.rotWorld.x, handles.rotWorld.y, 4 / scale, 0.4 * Math.PI, 1.8 * Math.PI);
+        overlayCtx.stroke();
+
+        // 3. Draw Corner Scale Handles
+        for (const corner of handles.corners) {
+          overlayCtx.save();
+          overlayCtx.translate(corner.world.x, corner.world.y);
+          overlayCtx.rotate(obj.rotation);
+
+          overlayCtx.fillStyle = '#ffffff';
+          overlayCtx.strokeStyle = '#00f2fe';
+          overlayCtx.lineWidth = 2 / scale;
+          overlayCtx.beginPath();
+          overlayCtx.roundRect(-5 / scale, -5 / scale, 10 / scale, 10 / scale, 2 / scale);
+          overlayCtx.fill();
+          overlayCtx.stroke();
+
+          overlayCtx.restore();
+        }
+
+        // 4. Angle / Dimensions Tooltip
+        overlayCtx.font = `${11 / scale}px monospace`;
+        overlayCtx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        const deg = Math.round((obj.rotation * 180 / Math.PI) % 360);
+        const text = `${obj.width.toFixed(2)}×${obj.height.toFixed(2)} m | ${deg < 0 ? deg + 360 : deg}°`;
+        const textMetrics = overlayCtx.measureText(text);
+        const tipX = obj.x - textMetrics.width / 2 - 6 / scale;
+        const tipY = obj.y + obj.height / 2 + 20 / scale;
+
+        overlayCtx.beginPath();
+        overlayCtx.roundRect(tipX, tipY, textMetrics.width + 12 / scale, 18 / scale, 4 / scale);
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+        overlayCtx.lineWidth = 1 / scale;
+        overlayCtx.stroke();
+
+        overlayCtx.fillStyle = '#00f2fe';
+        overlayCtx.fillText(text, tipX + 6 / scale, tipY + 13 / scale);
+
+        overlayCtx.restore();
+      }
+    }
+
+    /* ==========================================================================
+       UI Controls, Presets, and Event Binding
+       ========================================================================== */
+    function setMode(mode) {
+      currentMode = mode;
+      const btnFluid = document.getElementById('mode-fluid-btn');
+      const btnObj = document.getElementById('mode-object-btn');
+      const hudMode = document.getElementById('hud-mode');
+      const hintBadge = document.getElementById('hint-badge');
+      const hintText = document.getElementById('hint-text');
+
+      if (mode === 'fluid') {
+        btnFluid.classList.add('active');
+        btnObj.classList.remove('active');
+        hudMode.textContent = 'Fluid Draw';
+        hintBadge.textContent = 'FLUID MODE';
+        hintText.textContent = 'Click and drag anywhere to inject airflow and smoke.';
+        document.body.style.cursor = 'crosshair';
+      } else {
+        btnObj.classList.add('active');
+        btnFluid.classList.remove('active');
+        hudMode.textContent = 'Object Edit';
+        hintBadge.textContent = 'OBJECT MODE';
+        hintText.textContent = 'Click to select. Drag body to move, corners to scale, top knob to rotate.';
+        document.body.style.cursor = 'default';
+      }
+    }
+
+    document.getElementById('mode-fluid-btn').addEventListener('click', () => setMode('fluid'));
+    document.getElementById('mode-object-btn').addEventListener('click', () => setMode('object'));
+
+    // Spawning Shapes
+    function spawnObstacle(type) {
+      const domainHeight = getDomainHeight();
+      const cx = CONFIG.domainWidth / 2 + (Math.random() - 0.5) * CONFIG.domainWidth * 0.08;
+      const cy = domainHeight / 2 + (Math.random() - 0.5) * domainHeight * 0.08;
+      let obj;
+      if (type === 'rect') {
+        obj = new Obstacle('rect', cx, cy, CONFIG.domainWidth * 0.14, CONFIG.domainWidth * 0.07, 0);
+      } else if (type === 'circle') {
+        obj = new Obstacle('circle', cx, cy, CONFIG.domainWidth * 0.10, CONFIG.domainWidth * 0.10, 0);
+      } else if (type === 'triangle') {
+        obj = new Obstacle('triangle', cx, cy, CONFIG.domainWidth * 0.12, CONFIG.domainWidth * 0.11, 0);
+      } else if (type === 'airfoil') {
+        obj = new Obstacle('airfoil', cx, cy, CONFIG.domainWidth * 0.20, CONFIG.domainWidth * 0.06, -0.2); // ~11 deg angle of attack
+      }
+
+      obstacles.push(obj);
+      selectedObstacle = obj;
+      setMode('object');
+      updateObstacles(CONFIG.dt);
+      updateInspector();
+      updateHUD();
+    }
+
+    document.getElementById('btn-spawn-rect').addEventListener('click', () => spawnObstacle('rect'));
+    document.getElementById('btn-spawn-circle').addEventListener('click', () => spawnObstacle('circle'));
+    document.getElementById('btn-spawn-triangle').addEventListener('click', () => spawnObstacle('triangle'));
+    document.getElementById('btn-spawn-airfoil').addEventListener('click', () => spawnObstacle('airfoil'));
+
+    // Inspector
+    function updateInspector() {
+      const card = document.getElementById('object-inspector');
+      if (!selectedObstacle || currentMode !== 'object') {
+        card.classList.remove('visible');
+        return;
+      }
+      card.classList.add('visible');
+      document.getElementById('insp-type').textContent = selectedObstacle.type;
+      document.getElementById('insp-dim').textContent =
+        `${selectedObstacle.width.toFixed(2)} × ${selectedObstacle.height.toFixed(2)} m`;
+      let deg = Math.round((selectedObstacle.rotation * 180 / Math.PI) % 360);
+      if (deg < 0) deg += 360;
+      document.getElementById('val-insp-angle').textContent = `${deg}°`;
+      document.getElementById('slider-insp-angle').value = deg;
+      document.getElementById('slider-insp-width').max = CONFIG.domainWidth;
+      document.getElementById('slider-insp-height').max = getDomainHeight();
+      document.getElementById('slider-insp-width').value = selectedObstacle.width;
+      document.getElementById('slider-insp-height').value = selectedObstacle.height;
+      document.getElementById('val-insp-width').textContent = `${selectedObstacle.width.toFixed(2)} m`;
+      document.getElementById('val-insp-height').textContent = `${selectedObstacle.height.toFixed(2)} m`;
+    }
+
+    document.getElementById('slider-insp-angle').addEventListener('input', (e) => {
+      if (selectedObstacle) {
+        selectedObstacle.rotation = (parseFloat(e.target.value) * Math.PI) / 180;
+        document.getElementById('val-insp-angle').textContent = `${e.target.value}°`;
+        updateObstacles(CONFIG.dt);
+      }
+    });
+
+    function updateSelectedObstacleSize(width, height) {
+      if (!selectedObstacle) return;
+      selectedObstacle.width = Math.max(0.1, Math.min(width, CONFIG.domainWidth));
+      selectedObstacle.height = Math.max(0.1, Math.min(height, getDomainHeight()));
+      if (selectedObstacle.type === 'circle') {
+        const diameter = Math.min(selectedObstacle.width, selectedObstacle.height);
+        selectedObstacle.width = diameter;
+        selectedObstacle.height = diameter;
+      }
+      selectedObstacle.radius = selectedObstacle.width / 2;
+      updateObstacles(CONFIG.dt);
+      updateInspector();
+    }
+
+    document.getElementById('slider-insp-width').addEventListener('input', (e) => {
+      if (selectedObstacle) {
+        updateSelectedObstacleSize(parseFloat(e.target.value), selectedObstacle.height);
+      }
+    });
+
+    document.getElementById('slider-insp-height').addEventListener('input', (e) => {
+      if (selectedObstacle) {
+        updateSelectedObstacleSize(selectedObstacle.width, parseFloat(e.target.value));
+      }
+    });
+
+    document.getElementById('btn-insp-dup').addEventListener('click', () => {
+      if (selectedObstacle) {
+        const o = selectedObstacle;
+        const offset = CONFIG.domainWidth * 0.03;
+        const dup = new Obstacle(o.type, o.x + offset, o.y + offset, o.width, o.height, o.rotation);
+        obstacles.push(dup);
+        selectedObstacle = dup;
+        updateObstacles(CONFIG.dt);
+        updateInspector();
+        updateHUD();
+      }
+    });
+
+    document.getElementById('btn-insp-del').addEventListener('click', () => {
+      if (selectedObstacle) {
+        obstacles = obstacles.filter(o => o !== selectedObstacle);
+        selectedObstacle = null;
+        updateObstacles(CONFIG.dt);
+        updateInspector();
+        updateHUD();
+      }
+    });
+
+    // Preset Manager
+    function loadPreset(name) {
+      clearFluid();
+      obstacles = [];
+      selectedObstacle = null;
+
+      const cw = CONFIG.domainWidth;
+      const ch = getDomainHeight();
+
+      if (name === 'windtunnel') {
+        // Wind tunnel with aerodynamic NACA airfoil
+        CONFIG.inflow = true;
+        CONFIG.inflowSpeed = 75;
+        CONFIG.streamlines = true;
+        CONFIG.viscosity = 0.000;
+        CONFIG.vorticity = 24.0;
+        CONFIG.displayMode = 0;
+        CONFIG.palette = 0;
+
+        const foil = new Obstacle('airfoil', cw * 0.42, ch * 0.5, cw * 0.22, cw * 0.065, -0.15); // angle of attack
+        obstacles.push(foil);
+        selectedObstacle = foil;
+      } else if (name === 'karman') {
+        // Karman vortex street cylinder wake
+        CONFIG.inflow = true;
+        CONFIG.inflowSpeed = 65;
+        CONFIG.streamlines = true;
+        CONFIG.viscosity = 0.000;
+        CONFIG.vorticity = 32.0;
+        CONFIG.displayMode = 0;
+        CONFIG.palette = 0;
+
+        const cyl = new Obstacle('circle', cw * 0.32, ch * 0.5, cw * 0.09, cw * 0.09, 0);
+        obstacles.push(cyl);
+        selectedObstacle = cyl;
+      } else if (name === 'slalom') {
+        // Slalom course
+        CONFIG.inflow = true;
+        CONFIG.inflowSpeed = 80;
+        CONFIG.streamlines = true;
+        CONFIG.viscosity = 0.001;
+        CONFIG.vorticity = 28.0;
+
+        const tri = new Obstacle('triangle', cw * 0.3, ch * 0.35, cw * 0.12, cw * 0.11, Math.PI / 2);
+        const rect = new Obstacle('rect', cw * 0.55, ch * 0.65, cw * 0.14, cw * 0.06, -Math.PI / 4);
+        obstacles.push(tri, rect);
+        selectedObstacle = tri;
+      } else if (name === 'sandbox') {
+        // Clean sandbox
+        CONFIG.inflow = false;
+        CONFIG.streamlines = false;
+        CONFIG.viscosity = 0.000;
+        CONFIG.vorticity = 20.0;
+
+        const rect = new Obstacle('rect', cw * 0.5, ch * 0.5, cw * 0.13, cw * 0.08, 0.4);
+        obstacles.push(rect);
+        selectedObstacle = rect;
+        setMode('fluid');
+      }
+
+      syncControlsToUI();
+      updateObstacles(CONFIG.dt);
+      updateInspector();
+      updateHUD();
+    }
+
+    document.getElementById('preset-select').addEventListener('change', (e) => {
+      loadPreset(e.target.value);
+    });
+
+    function syncControlsToUI() {
+      document.getElementById('slider-domain-width').value = CONFIG.domainWidth;
+      document.getElementById('val-domain-width').textContent = `${CONFIG.domainWidth.toFixed(0)} m`;
+      document.getElementById('select-solver').value = CONFIG.solverMode;
+
+      document.getElementById('slider-viscosity').value = CONFIG.viscosity;
+      document.getElementById('val-viscosity').textContent = CONFIG.viscosity.toFixed(3);
+
+      document.getElementById('slider-diffusion').value = CONFIG.diffusion;
+      document.getElementById('val-diffusion').textContent = CONFIG.diffusion.toFixed(4);
+
+      document.getElementById('slider-dissipation').value = CONFIG.dissipation;
+      document.getElementById('val-dissipation').textContent = CONFIG.dissipation.toFixed(3);
+
+      document.getElementById('slider-vel-dissipation').value = CONFIG.velDissipation;
+      document.getElementById('val-vel-dissipation').textContent = CONFIG.velDissipation.toFixed(3);
+
+      document.getElementById('slider-splat-radius').value = CONFIG.splatRadius;
+      document.getElementById('val-splat-radius').textContent = `${CONFIG.splatRadius} px`;
+
+      document.getElementById('slider-vorticity').value = CONFIG.vorticity;
+      document.getElementById('val-vorticity').textContent = Math.round(CONFIG.vorticity);
+
+      document.getElementById('toggle-inflow').checked = CONFIG.inflow;
+      CONFIG.inflowSpeed = Math.min(Math.max(CONFIG.inflowSpeed, 0), MAX_INFLOW_SPEED);
+      document.getElementById('slider-inflow-speed').value = CONFIG.inflowSpeed;
+      document.getElementById('val-inflow-speed').textContent = `${Math.round(CONFIG.inflowSpeed)} m/s`;
+      document.getElementById('toggle-streamlines').checked = CONFIG.streamlines;
+
+      document.getElementById('select-viewmode').value = CONFIG.displayMode;
+      document.getElementById('select-palette').value = CONFIG.palette;
+    }
+
+    // Sliders & Toggles event listeners
+    document.getElementById('slider-domain-width').addEventListener('input', (e) => {
+      CONFIG.domainWidth = parseFloat(e.target.value);
+      document.getElementById('val-domain-width').textContent = `${CONFIG.domainWidth.toFixed(0)} m`;
+      updateObstacles(CONFIG.dt);
+      updateInspector();
+    });
+
+    document.getElementById('select-solver').addEventListener('change', (e) => {
+      CONFIG.solverMode = e.target.value;
+      clearFluid();
+    });
+
+    document.getElementById('slider-viscosity').addEventListener('input', (e) => {
+      CONFIG.viscosity = parseFloat(e.target.value);
+      document.getElementById('val-viscosity').textContent = CONFIG.viscosity.toFixed(3);
+    });
+
+    document.getElementById('slider-diffusion').addEventListener('input', (e) => {
+      CONFIG.diffusion = parseFloat(e.target.value);
+      document.getElementById('val-diffusion').textContent = CONFIG.diffusion.toFixed(4);
+    });
+
+    document.getElementById('slider-dissipation').addEventListener('input', (e) => {
+      CONFIG.dissipation = parseFloat(e.target.value);
+      document.getElementById('val-dissipation').textContent = CONFIG.dissipation.toFixed(3);
+    });
+
+    document.getElementById('slider-vel-dissipation').addEventListener('input', (e) => {
+      CONFIG.velDissipation = parseFloat(e.target.value);
+      document.getElementById('val-vel-dissipation').textContent = CONFIG.velDissipation.toFixed(3);
+    });
+
+    document.getElementById('slider-splat-radius').addEventListener('input', (e) => {
+      CONFIG.splatRadius = parseFloat(e.target.value);
+      document.getElementById('val-splat-radius').textContent = `${CONFIG.splatRadius} px`;
+    });
+
+    document.getElementById('slider-vorticity').addEventListener('input', (e) => {
+      CONFIG.vorticity = parseFloat(e.target.value);
+      document.getElementById('val-vorticity').textContent = Math.round(CONFIG.vorticity);
+    });
+
+    document.getElementById('toggle-inflow').addEventListener('change', (e) => {
+      CONFIG.inflow = e.target.checked;
+    });
+
+    document.getElementById('slider-inflow-speed').addEventListener('input', (e) => {
+      CONFIG.inflowSpeed = Math.min(parseFloat(e.target.value), MAX_INFLOW_SPEED);
+      e.target.value = CONFIG.inflowSpeed;
+      document.getElementById('val-inflow-speed').textContent = `${Math.round(CONFIG.inflowSpeed)} m/s`;
+    });
+
+    document.getElementById('toggle-streamlines').addEventListener('change', (e) => {
+      CONFIG.streamlines = e.target.checked;
+    });
+
+    document.getElementById('select-viewmode').addEventListener('change', (e) => {
+      CONFIG.displayMode = parseInt(e.target.value, 10);
+    });
+
+    document.getElementById('select-palette').addEventListener('change', (e) => {
+      CONFIG.palette = parseInt(e.target.value, 10);
+    });
+
+    // Action Buttons
+    document.getElementById('btn-clear-fluid').addEventListener('click', clearFluid);
+    document.getElementById('btn-clear-objects').addEventListener('click', () => {
+      obstacles = [];
+      selectedObstacle = null;
+      updateObstacles(CONFIG.dt);
+      updateInspector();
+      updateHUD();
+    });
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      loadPreset('windtunnel');
+    });
+
+    // Sidebar & Help Modal
+    const sidebar = document.getElementById('sidebar');
+    const togglePanelBtn = document.getElementById('toggle-panel-btn');
+    const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+    const helpModal = document.getElementById('help-modal');
+    const btnHelp = document.getElementById('btn-help');
+    const btnCloseHelp = document.getElementById('btn-close-help');
+
+    function toggleSidebar() {
+      sidebar.classList.toggle('minimized');
+    }
+
+    togglePanelBtn.addEventListener('click', toggleSidebar);
+    closeSidebarBtn.addEventListener('click', toggleSidebar);
+
+    btnHelp.addEventListener('click', () => helpModal.classList.add('visible'));
+    btnCloseHelp.addEventListener('click', () => helpModal.classList.remove('visible'));
+
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+      if (e.key === '1') {
+        setMode('fluid');
+      } else if (e.key === '2') {
+        setMode('object');
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedObstacle) {
+          obstacles = obstacles.filter(o => o !== selectedObstacle);
+          selectedObstacle = null;
+          updateObstacles(CONFIG.dt);
+          updateInspector();
+          updateHUD();
+        }
+      } else if (e.key === 'Escape') {
+        selectedObstacle = null;
+        updateInspector();
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        CONFIG.paused = !CONFIG.paused;
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        toggleSidebar();
+      } else if (e.key === '?' || e.key === 'h' || e.key === 'H') {
+        helpModal.classList.toggle('visible');
+      }
+    });
+
+    function updateHUD() {
+      document.getElementById('hud-objs').textContent = obstacles.length;
+    }
+
+    /* ==========================================================================
+       Window Resize Handling
+       ========================================================================== */
+    function resizeCanvas() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      glCanvas.width = width * dpr;
+      glCanvas.height = height * dpr;
+      glCanvas.style.width = width + 'px';
+      glCanvas.style.height = height + 'px';
+
+      overlayCanvas.width = width * dpr;
+      overlayCanvas.height = height * dpr;
+      overlayCanvas.style.width = width + 'px';
+      overlayCanvas.style.height = height + 'px';
+      overlayCtx.scale(dpr, dpr);
+
+      updateObstacles(CONFIG.dt);
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+
+    /* ==========================================================================
+       Main Animation & Benchmark Loop
+       ========================================================================== */
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let fpsTimer = performance.now();
+    const hudFps = document.getElementById('hud-fps');
+
+    function animate(currentTime) {
+      requestAnimationFrame(animate);
+
+      const dt = Math.min((currentTime - lastTime) / 1000.0, 0.033);
+      lastTime = currentTime;
+
+      // Refresh boundary velocities every frame so movement forces do not persist
+      // after an obstacle stops moving.
+      updateObstacles(dt || CONFIG.dt);
+
+      // Draw continuously while the pointer is held, including when it is
+      // stationary and no new pointer events are being dispatched.
+      if (currentMode === 'fluid' && pointer.isDown) {
+        const col = getNextFluidColor();
+        splat(pointer.x, pointer.y, pointer.pendingDx, pointer.pendingDy, col);
+        pointer.pendingDx = 0;
+        pointer.pendingDy = 0;
+      }
+
+      // Step fluid simulation
+      stepFluid(dt || CONFIG.dt);
+
+      // Render WebGL view
+      renderDisplay();
+
+      // Render 2D handles and overlays
+      renderOverlay();
+
+      // FPS Calculation
+      frameCount++;
+      if (currentTime - fpsTimer >= 500) {
+        const fps = Math.round((frameCount * 1000) / (currentTime - fpsTimer));
+        hudFps.textContent = fps;
+        frameCount = 0;
+        fpsTimer = currentTime;
+      }
+    }
+
+    // Initialize application
+    resizeCanvas();
+    loadPreset('windtunnel');
+    setMode('fluid');
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
