@@ -2,7 +2,10 @@
  * AeroFlow 2D - Obstacle Class & Geometry Utilities
  */
 
-import { nextObstacleId } from './state.js';
+import { getWorldScale } from './gl.js';
+
+// Next obstacle ID counter (module-local; only Obstacle writes it)
+let nextObstacleId = 1;
 
 /**
  * Point-in-triangle test using barycentric technique
@@ -184,6 +187,3 @@ export class Obstacle {
     ctx.restore();
   }
 }
-
-// Import getWorldScale from gl.js (will be set up in main.js or via import)
-import { getWorldScale } from './gl.js';

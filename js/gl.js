@@ -36,9 +36,9 @@ export function createShader(gl, type, source) {
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+    const info = gl.getShaderInfoLog(shader);
     gl.deleteShader(shader);
-    return null;
+    throw new Error('Shader compilation error: ' + info);
   }
   return shader;
 }
@@ -56,8 +56,9 @@ export function createProgram(gl, vsSource, fsSource) {
   gl.attachShader(program, fs);
   gl.linkProgram(program);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error('Program link error:', gl.getProgramInfoLog(program));
-    return null;
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error('Program link error: ' + info);
   }
   return program;
 }
@@ -128,6 +129,21 @@ gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 // Simulation dimensions
 export const simW = CONFIG.simWidth;
 export const simH = CONFIG.simHeight;
+
+// Offscreen obstacle rasterizer (RGB: R=255 solid, G=Vx, B=-Vy)
+export const obstacleCanvas = document.createElement('canvas');
+obstacleCanvas.width = CONFIG.simWidth;
+obstacleCanvas.height = CONFIG.simHeight;
+export const obstacleCtx = obstacleCanvas.getContext('2d', { willReadFrequently: false });
+
+// Obstacle boundary texture (RGBA8)
+export const obstacleTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, simW, simH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 /**
  * Get domain height in metres (follows canvas aspect ratio)

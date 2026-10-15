@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="css/main.css">
 </head>
 <body>
+  <div id="canvas-container">
+    <canvas id="gl-canvas"></canvas>
     <canvas id="overlay-canvas"></canvas>
   </div>
 
@@ -219,7 +221,7 @@
           <select id="select-solver" class="select-dropdown">
             <option value="auto">Auto (Mach-aware)</option>
             <option value="incompressible">Incompressible</option>
-            <option value="compressible">Compressible Euler</option>
+            <option value="compressible">Compressible (density / energy)</option>
           </select>
         </div>
       </div>
@@ -368,4 +370,5 @@
     </div>
   </div>
 
+  <script type="module" src="js/main.js"></script>
 </body>

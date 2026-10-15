@@ -15,6 +15,8 @@ export function updateObstacles(dt) {
   // Clear obstacle canvas with black (0, 0, 0, 0)
   obstacleCtx.fillStyle = 'black';
   obstacleCtx.fillRect(0, 0, simW, simH);
+  obstacleCtx.imageSmoothingEnabled = true;
+  obstacleCtx.imageSmoothingQuality = 'high';
 
   const scaleX = simW / CONFIG.domainWidth;
   const scaleY = simH / getDomainHeight();

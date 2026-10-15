@@ -32,9 +32,10 @@ export const splatFS = `#version 300 es
       }
       vec2 p = vUV - uPoint;
       p.x *= uAspectRatio;
-      vec3 splat = uColor * exp(-dot(p, p) / (uRadius * uRadius));
+      float weight = exp(-dot(p, p) / (uRadius * uRadius));
+      vec3 splat = uColor * weight;
       vec4 base = texture(uTarget, vUV);
-      fragColor = vec4(base.rgb + splat, base.a);
+      fragColor = vec4(base.rgb + splat, max(base.a, weight));
     }`;
 
 // Curl (Vorticity) Calculation Shader
@@ -50,6 +51,7 @@ export const curlFS = `#version 300 es
       float B = texture(uVelocity, vUV - vec2(0.0, uTexelSize.y)).x;
       float T = texture(uVelocity, vUV + vec2(0.0, uTexelSize.y)).x;
       float vorticity = 0.5 * ((R - L) - (T - B));
+      if (isnan(vorticity) || isinf(vorticity)) vorticity = 0.0;
       fragColor = vec4(vorticity, 0.0, 0.0, 1.0);
     }`;
 
@@ -85,7 +87,11 @@ export const vorticityFS = `#version 300 es
       force *= min(1.0, 120.0 / max(forceMagnitude, 1e-5));
 
       vec2 vel = texture(uVelocity, vUV).xy;
-      fragColor = vec4(vel + force * uDT, 0.0, 1.0);
+      vec2 newVel = vel + force * uDT;
+      if (isnan(newVel.x) || isinf(newVel.x) || isnan(newVel.y) || isinf(newVel.y)) {
+        newVel = vel;
+      }
+      fragColor = vec4(newVel, 0.0, 1.0);
     }`;
 
 // Divergence Shader with Solid Boundary Conditions
@@ -111,6 +117,7 @@ export const divergenceFS = `#version 300 es
       float B = texture(uVelocity, vUV - vec2(0.0, d.y)).y;
       float T = texture(uVelocity, vUV + vec2(0.0, d.y)).y;
       float div = 0.5 * ((R - L) + (T - B));
+      if (isnan(div) || isinf(div)) div = 0.0;
       fragColor = vec4(div, 0.0, 0.0, 1.0);
     }`;
 
@@ -136,6 +143,7 @@ export const pressureFS = `#version 300 es
       float T = texture(uPressure, vUV + vec2(0.0, d.y)).x;
       float div = texture(uDivergence, vUV).x;
       float p = (L + R + B + T - div) * 0.25;
+      if (isnan(p) || isinf(p)) p = 0.0;
       fragColor = vec4(p, 0.0, 0.0, 1.0);
     }`;
 
@@ -161,7 +169,11 @@ export const projectFS = `#version 300 es
       float T = texture(uPressure, vUV + vec2(0.0, d.y)).x;
       vec2 gradP = 0.5 * vec2(R - L, T - B);
       vec2 vel = texture(uVelocity, vUV).xy;
-      fragColor = vec4(vel - gradP, 0.0, 1.0);
+      vec2 newVel = vel - gradP;
+      if (isnan(newVel.x) || isinf(newVel.x) || isnan(newVel.y) || isinf(newVel.y)) {
+        newVel = vel;
+      }
+      fragColor = vec4(newVel, 0.0, 1.0);
     }`;
 
 // Advection Shader (Semi-Lagrangian)
@@ -182,8 +194,14 @@ export const advectFS = `#version 300 es
         return;
       }
       vec2 vel = texture(uVelocity, vUV).xy;
+      if (isnan(vel.x) || isinf(vel.x) || isnan(vel.y) || isinf(vel.y)) {
+        vel = vec2(0.0);
+      }
       vec2 backUV = vUV - vel * uDT * uTexelSize;
       vec4 val = texture(uSource, backUV);
+      if (isnan(val.r) || isinf(val.r) || isnan(val.g) || isinf(val.g) || isnan(val.b) || isinf(val.b)) {
+        val = texture(uSource, vUV);
+      }
       fragColor = vec4(val.rgb * uDissipation, val.a);
     }`;
 
@@ -210,7 +228,9 @@ export const diffuseFS = `#version 300 es
       float B = texture(uX, vUV - vec2(0.0, d.y)).x;
       float T = texture(uX, vUV + vec2(0.0, d.y)).x;
       float x0 = texture(uX0, vUV).x;
-      float x = (x0 + L + R + B + T) / uBeta;
+      float betaSafe = max(uBeta, 1e-5);
+      float x = (uAlpha * x0 + L + R + B + T) / betaSafe;
+      if (isnan(x) || isinf(x)) x = x0;
       fragColor = vec4(x, 0.0, 0.0, 1.0);
     }`;
 
@@ -284,31 +304,66 @@ export const compressibleFS = `#version 300 es
       }
       vec2 d = uTexelSize;
       if (uMode == 0) {
-        // Update velocity from pressure gradient
-        float pL = texture(uTarget, vUV - vec2(d.x, 0.0)).x;
-        float pR = texture(uTarget, vUV + vec2(d.x, 0.0)).x;
-        float pB = texture(uTarget, vUV - vec2(0.0, d.y)).x;
-        float pT = texture(uTarget, vUV + vec2(0.0, d.y)).x;
-        vec2 gradP = 0.5 * vec2(pR - pL, pT - pB);
+        // Primitive-variable pressure update. E is total energy density:
+        // p = (gamma - 1) * (E - rho * |u|^2 / 2).
         vec2 vel = texture(uVelocity, vUV).xy;
-        fragColor = vec4(vel - gradP * uDT, 0.0, 1.0);
+        float rho = max(texture(uDensity, vUV).x, 1e-4);
+        float E = max(texture(uEnergy, vUV).x, 0.0);
+        float pL = max((uGamma - 1.0) * (
+          texture(uEnergy, vUV - vec2(d.x, 0.0)).x -
+          0.5 * texture(uDensity, vUV - vec2(d.x, 0.0)).x *
+          dot(texture(uVelocity, vUV - vec2(d.x, 0.0)).xy,
+              texture(uVelocity, vUV - vec2(d.x, 0.0)).xy)), 0.0);
+        float pR = max((uGamma - 1.0) * (
+          texture(uEnergy, vUV + vec2(d.x, 0.0)).x -
+          0.5 * texture(uDensity, vUV + vec2(d.x, 0.0)).x *
+          dot(texture(uVelocity, vUV + vec2(d.x, 0.0)).xy,
+              texture(uVelocity, vUV + vec2(d.x, 0.0)).xy)), 0.0);
+        float pB = max((uGamma - 1.0) * (
+          texture(uEnergy, vUV - vec2(0.0, d.y)).x -
+          0.5 * texture(uDensity, vUV - vec2(0.0, d.y)).x *
+          dot(texture(uVelocity, vUV - vec2(0.0, d.y)).xy,
+              texture(uVelocity, vUV - vec2(0.0, d.y)).xy)), 0.0);
+        float pT = max((uGamma - 1.0) * (
+          texture(uEnergy, vUV + vec2(0.0, d.y)).x -
+          0.5 * texture(uDensity, vUV + vec2(0.0, d.y)).x *
+          dot(texture(uVelocity, vUV + vec2(0.0, d.y)).xy,
+              texture(uVelocity, vUV + vec2(0.0, d.y)).xy)), 0.0);
+        vec2 gradP = 0.5 * vec2(pR - pL, pT - pB);
+        if (vUV.x < 0.02) vel.x = uSpeed;
+        fragColor = vec4(vel - gradP * uDT / rho, 0.0, 1.0);
       } else if (uMode == 1) {
-        // Advect density
+        // Advect density and apply the continuity compression term.
         vec2 vel = texture(uVelocity, vUV).xy;
         vec2 backUV = vUV - vel * uDT * d;
         float rho = texture(uDensity, backUV).x;
+        float L = texture(uVelocity, vUV - vec2(d.x, 0.0)).x;
+        float R = texture(uVelocity, vUV + vec2(d.x, 0.0)).x;
+        float B = texture(uVelocity, vUV - vec2(0.0, d.y)).y;
+        float T = texture(uVelocity, vUV + vec2(0.0, d.y)).y;
+        float div = 0.5 * ((R - L) + (T - B));
+        rho = max(rho * (1.0 - uDT * div), 1e-4);
         // Inflow at left boundary
         if (vUV.x < 0.02) rho = 1.0;
         fragColor = vec4(rho, 0.0, 0.0, 1.0);
       } else {
-        // Advect total energy
+        // Advect total energy density and apply its compression work term.
         vec2 vel = texture(uVelocity, vUV).xy;
         vec2 backUV = vUV - vel * uDT * d;
         float E = texture(uEnergy, backUV).x;
+        float rho = max(texture(uDensity, vUV).x, 1e-4);
+        float p = max((uGamma - 1.0) * (
+          texture(uEnergy, vUV).x - 0.5 * rho * dot(vel, vel)), 0.0);
+        float L = texture(uVelocity, vUV - vec2(d.x, 0.0)).x;
+        float R = texture(uVelocity, vUV + vec2(d.x, 0.0)).x;
+        float B = texture(uVelocity, vUV - vec2(0.0, d.y)).y;
+        float T = texture(uVelocity, vUV + vec2(0.0, d.y)).y;
+        float div = 0.5 * ((R - L) + (T - B));
+        E = max(E - uDT * (E + p) * div, 1e-4);
         // Inflow energy at left boundary
         if (vUV.x < 0.02) {
           float rho = 1.0;
-          float p = rho / uGamma;
+          float p = 1.0;
           E = p / (uGamma - 1.0) + 0.5 * rho * uSpeed * uSpeed;
         }
         fragColor = vec4(E, 0.0, 0.0, 1.0);
