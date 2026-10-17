@@ -40,6 +40,42 @@ export const progInflow = createProgram(gl, baseVS, inflowFS);
 export const progCompressible = createProgram(gl, baseVS, compressibleFS);
 export const progDisplay = createProgram(gl, baseVS, displayFS);
 
+/** Cache uniform locations on a program object to avoid repeated driver lookups. */
+function cacheUniforms(program, names) {
+  const locs = {};
+  for (const name of names) {
+    locs[name] = gl.getUniformLocation(program, name);
+  }
+  program.uLoc = locs;
+}
+
+// Cache uniforms for every program (locations are constant after linking)
+cacheUniforms(progCompressible, [
+  'uTarget', 'uVelocity', 'uDensity', 'uEnergy', 'uObstacle',
+  'uTexelSize', 'uDT', 'uSpeed', 'uGamma', 'uMode'
+]);
+cacheUniforms(progInflow, [
+  'uTarget', 'uObstacle', 'uSpeed', 'uMode', 'uPalette'
+]);
+cacheUniforms(progCurl, ['uVelocity', 'uTexelSize']);
+cacheUniforms(progVorticity, [
+  'uVelocity', 'uCurl', 'uObstacle', 'uTexelSize', 'uCurlStrength', 'uDT'
+]);
+cacheUniforms(progDiffuse, ['uX', 'uX0', 'uObstacle', 'uTexelSize', 'uAlpha', 'uBeta']);
+cacheUniforms(progDivergence, ['uVelocity', 'uObstacle', 'uTexelSize']);
+cacheUniforms(progPressure, ['uPressure', 'uDivergence', 'uObstacle', 'uTexelSize', 'uSOR', 'uParity']);
+cacheUniforms(progProject, ['uVelocity', 'uPressure', 'uObstacle', 'uTexelSize']);
+cacheUniforms(progAdvect, [
+  'uVelocity', 'uSource', 'uObstacle', 'uTexelSize', 'uDT', 'uDissipation'
+]);
+cacheUniforms(progSplat, [
+  'uTarget', 'uObstacle', 'uPoint', 'uRadius', 'uAspectRatio', 'uColor'
+]);
+cacheUniforms(progDisplay, [
+  'uDye', 'uVelocity', 'uPressure', 'uCurl', 'uObstacle',
+  'uTexelSize', 'uDisplayMode', 'uPalette'
+]);
+
 // Simulation Buffers (Double-buffered for ping-pong)
 export const velocity = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
 export const dye = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);

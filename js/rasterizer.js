@@ -12,11 +12,17 @@ import { gl, simW, simH, getDomainHeight, obstacleCanvas, obstacleCtx, obstacleT
  * @param {number} dt - Time delta for velocity calculation
  */
 export function updateObstacles(dt) {
+  // Skip re-rasterization when obstacle geometry hasn't changed.
+  // Static obstacles cost ~0 per frame (no canvas draw or GPU upload).
+  if (!state.obstacleDirty) return;
+
   // Clear obstacle canvas with black (0, 0, 0, 0)
   obstacleCtx.fillStyle = 'black';
   obstacleCtx.fillRect(0, 0, simW, simH);
-  obstacleCtx.imageSmoothingEnabled = true;
-  obstacleCtx.imageSmoothingQuality = 'high';
+  // Hard (unsmoothed) raster edges. Anti-aliasing produces partially-covered
+  // edge texels (gray R); combined with NEAREST sampling below that keeps the
+  // obstacle mask a crisp solid/void binary so the flow cannot leak through.
+  obstacleCtx.imageSmoothingEnabled = false;
 
   const scaleX = simW / CONFIG.domainWidth;
   const scaleY = simH / getDomainHeight();
@@ -92,4 +98,7 @@ export function updateObstacles(dt) {
   // Upload obstacle canvas into WebGL obstacle texture
   gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, obstacleCanvas);
+
+  // Reset dirty flag after successful rasterization
+  state.obstacleDirty = false;
 }

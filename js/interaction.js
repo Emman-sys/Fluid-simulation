@@ -150,6 +150,7 @@ window.addEventListener('pointermove', (e) => {
       if (state.dragAction.type === 'translate') {
         obj.x = state.dragAction.startObjX + (worldPos.x - state.dragAction.startPointerX);
         obj.y = state.dragAction.startObjY + (worldPos.y - state.dragAction.startPointerY);
+        state.obstacleDirty = true;
         updateObstacles(CONFIG.dt);
         updateInspector();
       } else if (state.dragAction.type === 'rotate') {
@@ -162,6 +163,7 @@ window.addEventListener('pointermove', (e) => {
           newAngle = Math.round(newAngle / snap) * snap;
         }
         obj.rotation = newAngle;
+        state.obstacleDirty = true;
         updateObstacles(CONFIG.dt);
         updateInspector();
       } else if (state.dragAction.type === 'scale') {
@@ -192,6 +194,7 @@ window.addEventListener('pointermove', (e) => {
           obj.height = newH;
           obj.radius = newW / 2;
         }
+        state.obstacleDirty = true;
         updateObstacles(CONFIG.dt);
         updateInspector();
       }

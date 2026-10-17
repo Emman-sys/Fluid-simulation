@@ -4,7 +4,7 @@
  * the control panel bindings, keyboard shortcuts and HUD updates.
  */
 
-import { CONFIG, MAX_INFLOW_SPEED } from './config.js';
+import { CONFIG, MAX_INFLOW_SPEED, applyQualityPreset } from './config.js';
 import { state } from './state.js';
 import { getDomainHeight } from './gl.js';
 import { Obstacle } from './obstacle.js';
@@ -57,6 +57,7 @@ function spawnObstacle(type) {
 
   state.obstacles.push(obj);
   state.selectedObstacle = obj;
+  state.obstacleDirty = true;
   setMode('object');
   updateObstacles(CONFIG.dt);
   updateInspector();
@@ -95,6 +96,7 @@ document.getElementById('slider-insp-angle').addEventListener('input', (e) => {
   if (state.selectedObstacle) {
     state.selectedObstacle.rotation = (parseFloat(e.target.value) * Math.PI) / 180;
     document.getElementById('val-insp-angle').textContent = `${e.target.value}°`;
+    state.obstacleDirty = true;
     updateObstacles(CONFIG.dt);
   }
 });
@@ -109,6 +111,7 @@ function updateSelectedObstacleSize(width, height) {
     state.selectedObstacle.height = diameter;
   }
   state.selectedObstacle.radius = state.selectedObstacle.width / 2;
+  state.obstacleDirty = true;
   updateObstacles(CONFIG.dt);
   updateInspector();
 }
@@ -125,23 +128,11 @@ document.getElementById('slider-insp-height').addEventListener('input', (e) => {
   }
 });
 
-document.getElementById('btn-insp-dup').addEventListener('click', () => {
-  if (state.selectedObstacle) {
-    const o = state.selectedObstacle;
-    const offset = CONFIG.domainWidth * 0.03;
-    const dup = new Obstacle(o.type, o.x + offset, o.y + offset, o.width, o.height, o.rotation);
-    state.obstacles.push(dup);
-    state.selectedObstacle = dup;
-    updateObstacles(CONFIG.dt);
-    updateInspector();
-    updateHUD();
-  }
-});
-
 document.getElementById('btn-insp-del').addEventListener('click', () => {
   if (state.selectedObstacle) {
     state.obstacles = state.obstacles.filter(o => o !== state.selectedObstacle);
     state.selectedObstacle = null;
+    state.obstacleDirty = true;
     updateObstacles(CONFIG.dt);
     updateInspector();
     updateHUD();
@@ -219,24 +210,13 @@ document.getElementById('preset-select').addEventListener('change', (e) => {
 });
 
 function syncControlsToUI() {
-  document.getElementById('slider-domain-width').value = CONFIG.domainWidth;
-  document.getElementById('val-domain-width').textContent = `${CONFIG.domainWidth.toFixed(0)} m`;
   document.getElementById('select-solver').value = CONFIG.solverMode;
 
   document.getElementById('slider-viscosity').value = CONFIG.viscosity;
   document.getElementById('val-viscosity').textContent = CONFIG.viscosity.toFixed(3);
 
-  document.getElementById('slider-diffusion').value = CONFIG.diffusion;
-  document.getElementById('val-diffusion').textContent = CONFIG.diffusion.toFixed(4);
-
   document.getElementById('slider-dissipation').value = CONFIG.dissipation;
   document.getElementById('val-dissipation').textContent = CONFIG.dissipation.toFixed(3);
-
-  document.getElementById('slider-vel-dissipation').value = CONFIG.velDissipation;
-  document.getElementById('val-vel-dissipation').textContent = CONFIG.velDissipation.toFixed(3);
-
-  document.getElementById('slider-splat-radius').value = CONFIG.splatRadius;
-  document.getElementById('val-splat-radius').textContent = `${CONFIG.splatRadius} px`;
 
   document.getElementById('slider-vorticity').value = CONFIG.vorticity;
   document.getElementById('val-vorticity').textContent = Math.round(CONFIG.vorticity);
@@ -252,13 +232,6 @@ function syncControlsToUI() {
 }
 
 // Sliders & Toggles event listeners
-document.getElementById('slider-domain-width').addEventListener('input', (e) => {
-  CONFIG.domainWidth = parseFloat(e.target.value);
-  document.getElementById('val-domain-width').textContent = `${CONFIG.domainWidth.toFixed(0)} m`;
-  updateObstacles(CONFIG.dt);
-  updateInspector();
-});
-
 document.getElementById('select-solver').addEventListener('change', (e) => {
   CONFIG.solverMode = e.target.value;
   clearFluid();
@@ -269,24 +242,11 @@ document.getElementById('slider-viscosity').addEventListener('input', (e) => {
   document.getElementById('val-viscosity').textContent = CONFIG.viscosity.toFixed(3);
 });
 
-document.getElementById('slider-diffusion').addEventListener('input', (e) => {
-  CONFIG.diffusion = parseFloat(e.target.value);
-  document.getElementById('val-diffusion').textContent = CONFIG.diffusion.toFixed(4);
-});
-
 document.getElementById('slider-dissipation').addEventListener('input', (e) => {
-  CONFIG.dissipation = parseFloat(e.target.value);
-  document.getElementById('val-dissipation').textContent = CONFIG.dissipation.toFixed(3);
-});
-
-document.getElementById('slider-vel-dissipation').addEventListener('input', (e) => {
-  CONFIG.velDissipation = parseFloat(e.target.value);
-  document.getElementById('val-vel-dissipation').textContent = CONFIG.velDissipation.toFixed(3);
-});
-
-document.getElementById('slider-splat-radius').addEventListener('input', (e) => {
-  CONFIG.splatRadius = parseFloat(e.target.value);
-  document.getElementById('val-splat-radius').textContent = `${CONFIG.splatRadius} px`;
+  const val = parseFloat(e.target.value);
+  CONFIG.dissipation = val;
+  CONFIG.velDissipation = val;
+  document.getElementById('val-dissipation').textContent = val.toFixed(3);
 });
 
 document.getElementById('slider-vorticity').addEventListener('input', (e) => {
@@ -316,11 +276,24 @@ document.getElementById('select-palette').addEventListener('change', (e) => {
   CONFIG.palette = parseInt(e.target.value, 10);
 });
 
+document.getElementById('select-quality').addEventListener('change', (e) => {
+  const quality = e.target.value;
+  applyQualityPreset(quality);
+  document.getElementById('val-solver-quality').textContent =
+    quality.charAt(0).toUpperCase() + quality.slice(1);
+});
+
+// Initialize the quality selector to match CONFIG
+document.getElementById('select-quality').value = CONFIG.quality;
+document.getElementById('val-solver-quality').textContent =
+  CONFIG.quality.charAt(0).toUpperCase() + CONFIG.quality.slice(1);
+
 // Action Buttons
 document.getElementById('btn-clear-fluid').addEventListener('click', clearFluid);
 document.getElementById('btn-clear-objects').addEventListener('click', () => {
   state.obstacles = [];
   state.selectedObstacle = null;
+  state.obstacleDirty = true;
   updateObstacles(CONFIG.dt);
   updateInspector();
   updateHUD();
@@ -359,6 +332,7 @@ window.addEventListener('keydown', (e) => {
     if (state.selectedObstacle) {
       state.obstacles = state.obstacles.filter(o => o !== state.selectedObstacle);
       state.selectedObstacle = null;
+      state.obstacleDirty = true;
       updateObstacles(CONFIG.dt);
       updateInspector();
       updateHUD();

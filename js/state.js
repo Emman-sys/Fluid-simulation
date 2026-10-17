@@ -31,5 +31,10 @@ export const state = {
     pendingDx: 0,
     pendingDy: 0,
     color: [0.1, 0.8, 1.0]
-  }
+  },
+
+  // True when obstacle geometry/transform has changed and the obstacle
+  // texture needs to be re-rasterized. Skips redundant GPU uploads when
+  // obstacles are static.
+  obstacleDirty: true
 };

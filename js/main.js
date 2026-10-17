@@ -24,6 +24,11 @@ const hudRes = document.getElementById('hud-res');
 let lastTime = performance.now();
 let frameCount = 0;
 let fpsTimer = performance.now();
+let simTime = 0;
+let simFrameCount = 0;
+let simAccumulator = 0;
+const FIXED_SIM_DT = 1 / 60;   // fixed simulation timestep (60 Hz)
+const MAX_SIM_SUBSTEPS = 1;    // at most one sim step per frame; no catch-up spiral
 
 function resizeCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -41,6 +46,7 @@ function resizeCanvas() {
   overlayCanvas.style.height = height + 'px';
   overlayCtx.scale(dpr, dpr);
 
+  state.obstacleDirty = true;
   updateObstacles(CONFIG.dt);
 }
 
@@ -49,12 +55,12 @@ window.addEventListener('resize', resizeCanvas);
 function animate(currentTime) {
   requestAnimationFrame(animate);
 
-  const dt = Math.min((currentTime - lastTime) / 1000.0, 0.033);
+  const frameDt = Math.min((currentTime - lastTime) / 1000.0, 0.25);
   lastTime = currentTime;
 
   // Refresh boundary velocities every frame so movement forces do not persist
   // after an obstacle stops moving.
-  updateObstacles(dt || CONFIG.dt);
+  updateObstacles(frameDt || CONFIG.dt);
 
   // Draw continuously while the pointer is held, including when it is
   // stationary and no new pointer events are being dispatched.
@@ -65,8 +71,20 @@ function animate(currentTime) {
     state.pointer.pendingDy = 0;
   }
 
-  // Step fluid simulation
-  stepFluid(dt || CONFIG.dt);
+  // Step fluid simulation at a fixed timestep.
+  // Accumulate frame time and step the simulation as many fixed steps as needed,
+  // capped to avoid a spiral of death on slow frames.
+  simAccumulator += frameDt;
+  let simSteps = 0;
+  while (simAccumulator >= FIXED_SIM_DT && simSteps < MAX_SIM_SUBSTEPS) {
+    const simStart = performance.now();
+    stepFluid(FIXED_SIM_DT);
+    const simEnd = performance.now();
+    simTime += simEnd - simStart;
+    simFrameCount++;
+    simAccumulator -= FIXED_SIM_DT;
+    simSteps++;
+  }
 
   // Render WebGL view
   renderDisplay();
@@ -78,9 +96,12 @@ function animate(currentTime) {
   frameCount++;
   if (currentTime - fpsTimer >= 500) {
     const fps = Math.round((frameCount * 1000) / (currentTime - fpsTimer));
-    hudFps.textContent = fps;
+    const avgSimMs = simFrameCount ? (simTime / simFrameCount).toFixed(1) : '0';
+    hudFps.textContent = `${fps} FPS  (sim ~${avgSimMs}ms)`;
     frameCount = 0;
     fpsTimer = currentTime;
+    simTime = 0;
+    simFrameCount = 0;
   }
 }
 

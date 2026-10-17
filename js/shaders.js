@@ -121,7 +121,9 @@ export const divergenceFS = `#version 300 es
       fragColor = vec4(div, 0.0, 0.0, 1.0);
     }`;
 
-// Pressure Poisson Solver (Jacobi) Shader
+// Pressure Poisson Solver (Red-Black SOR) Shader
+// Red-black Gauss-Seidel / SOR converges ~2x faster than plain Jacobi.
+// Each "iteration" consists of two parity passes (red then black).
 export const pressureFS = `#version 300 es
     precision highp float;
     in vec2 vUV;
@@ -129,6 +131,8 @@ export const pressureFS = `#version 300 es
     uniform sampler2D uDivergence;
     uniform sampler2D uObstacle;
     uniform vec2 uTexelSize;
+    uniform float uSOR;      // Relaxation factor (1.0 = Jacobi, 1.0-2.0 = SOR)
+    uniform int uParity;     // 0 = red/even cells, 1 = black/odd cells
     out vec4 fragColor;
     void main() {
       vec4 obsC = texture(uObstacle, vUV);
@@ -136,13 +140,32 @@ export const pressureFS = `#version 300 es
         fragColor = vec4(0.0);
         return;
       }
+      // Red-black parity: only update cells matching uParity; copy others unchanged.
+      vec2 px = vUV / uTexelSize;  // pixel coordinates
+      float parity = mod(floor(px.x) + floor(px.y), 2.0);
+      if (mod(parity, 2.0) != float(uParity)) {
+        fragColor = vec4(texture(uPressure, vUV).x, 0.0, 0.0, 1.0);
+        return;
+      }
       vec2 d = uTexelSize;
-      float L = texture(uPressure, vUV - vec2(d.x, 0.0)).x;
-      float R = texture(uPressure, vUV + vec2(d.x, 0.0)).x;
-      float B = texture(uPressure, vUV - vec2(0.0, d.y)).x;
-      float T = texture(uPressure, vUV + vec2(0.0, d.y)).x;
+      // Pressure at the current cell (used for the solid-wall Neumann condition).
+      float pC = texture(uPressure, vUV).x;
+      // Solid-wall boundary condition: if a neighbour lies inside an obstacle,
+      // use pC instead of the obstacle's hard p = 0. This is ∂p/∂n = 0 at the
+      // wall and prevents an artificial low-pressure sink from forming at the
+      // rear of obstacles (which would otherwise suck the flow toward them).
+      vec4 obsL = texture(uObstacle, vUV - vec2(d.x, 0.0));
+      vec4 obsR = texture(uObstacle, vUV + vec2(d.x, 0.0));
+      vec4 obsB = texture(uObstacle, vUV - vec2(0.0, d.y));
+      vec4 obsT = texture(uObstacle, vUV + vec2(0.0, d.y));
+      float L = (obsL.r > 0.5) ? pC : texture(uPressure, vUV - vec2(d.x, 0.0)).x;
+      float R = (obsR.r > 0.5) ? pC : texture(uPressure, vUV + vec2(d.x, 0.0)).x;
+      float B = (obsB.r > 0.5) ? pC : texture(uPressure, vUV - vec2(0.0, d.y)).x;
+      float T = (obsT.r > 0.5) ? pC : texture(uPressure, vUV + vec2(0.0, d.y)).x;
       float div = texture(uDivergence, vUV).x;
-      float p = (L + R + B + T - div) * 0.25;
+      float jacobi = (L + R + B + T - div) * 0.25;
+      // SOR: p_new = p_old + omega * (jacobi - p_old)
+      float p = pC + uSOR * (jacobi - pC);
       if (isnan(p) || isinf(p)) p = 0.0;
       fragColor = vec4(p, 0.0, 0.0, 1.0);
     }`;
@@ -159,7 +182,10 @@ export const projectFS = `#version 300 es
     void main() {
       vec4 obsC = texture(uObstacle, vUV);
       if (obsC.r > 0.5) {
-        fragColor = texture(uVelocity, vUV);
+        // No-penetration / no-slip: solid cells carry no fluid velocity so they
+        // cannot act as reservoirs that leak into or attract flow around the
+        // obstacle (e.g. air being drawn to the rear of an aerofoil).
+        fragColor = vec4(0.0);
         return;
       }
       vec2 d = uTexelSize;
@@ -346,7 +372,7 @@ export const compressibleFS = `#version 300 es
         // Inflow at left boundary
         if (vUV.x < 0.02) rho = 1.0;
         fragColor = vec4(rho, 0.0, 0.0, 1.0);
-      } else {
+      } else if (uMode == 2) {
         // Advect total energy density and apply its compression work term.
         vec2 vel = texture(uVelocity, vUV).xy;
         vec2 backUV = vUV - vel * uDT * d;
@@ -367,6 +393,14 @@ export const compressibleFS = `#version 300 es
           E = p / (uGamma - 1.0) + 0.5 * rho * uSpeed * uSpeed;
         }
         fragColor = vec4(E, 0.0, 0.0, 1.0);
+      } else {
+        // uMode == 3: write thermodynamic pressure for display/visualization.
+        // p = (gamma - 1) * (E - 0.5 * rho * |u|^2)
+        vec2 vel = texture(uVelocity, vUV).xy;
+        float rho = max(texture(uDensity, vUV).x, 1e-4);
+        float E = max(texture(uEnergy, vUV).x, 0.0);
+        float p = max((uGamma - 1.0) * (E - 0.5 * rho * dot(vel, vel)), 0.0);
+        fragColor = vec4(p, 0.0, 0.0, 1.0);
       }
     }`;
 

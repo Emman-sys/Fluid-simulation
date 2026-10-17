@@ -33,5 +33,41 @@ export const CONFIG = {
   streamlines: true,
   displayMode: 0, // 0: Dye, 1: Velocity, 2: Pressure, 3: Vorticity
   palette: 0,     // 0: Cyan, 1: Fire, 2: Violet, 3: Thermal, 4: White
-  paused: false
+  paused: false,
+
+  // Solver quality preset: 'high' | 'medium' | 'low'. Controls pressure
+  // Poisson iterations, viscous diffusion iterations, and the CFL substep cap.
+  // Lower quality = fewer GPU passes per frame = higher frame rate.
+  quality: 'high',
+
+  // SOR relaxation factor for the pressure Poisson solver.
+  // 1.0 = plain Jacobi, 1.0-2.0 = successive over-relaxation (faster convergence).
+  sorRelaxation: 1.8,
 };
+
+// Quality presets override CONFIG solver parameters. Each preset trades
+// physical accuracy for frame rate by reducing the number of iterative
+// solver passes (pressure Poisson is the dominant cost).
+// Each pressure "iteration" = red pass + black pass (2 render passes).
+// SOR converges faster per iteration than Jacobi, but on a 512x512 grid we
+// still need enough iterations for pressure information to propagate from the
+// boundaries to the centre of the domain. Too few iterations leaves the centre
+// under-resolved, which impedes airflow there.
+export const QUALITY_PRESETS = {
+  high:   { pressureIterations: 16, viscosityIterations: 4,  cflSubstepCap: 8 },
+  medium: { pressureIterations: 12, viscosityIterations: 2,  cflSubstepCap: 4 },
+  low:    { pressureIterations: 8,  viscosityIterations: 0,  cflSubstepCap: 2 },
+};
+
+// Apply the selected quality preset to CONFIG (mutating in place so all
+// importers see the updated values). Call this whenever CONFIG.quality changes.
+export function applyQualityPreset(qualityName) {
+  const preset = QUALITY_PRESETS[qualityName] || QUALITY_PRESETS.high;
+  CONFIG.quality = qualityName;
+  CONFIG.pressureIterations = preset.pressureIterations;
+  CONFIG.viscosityIterations = preset.viscosityIterations;
+  CONFIG.cflSubstepCap = preset.cflSubstepCap;
+}
+
+// Initialize with the configured quality preset.
+applyQualityPreset(CONFIG.quality);
