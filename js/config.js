@@ -5,11 +5,10 @@
  */
 
 export const AIR = {
-  speedOfSoundMetersPerSecond: 343,
-  maxMach: 2.0
+  speedOfSoundMetersPerSecond: 343
 };
 
-export const MAX_INFLOW_SPEED = AIR.speedOfSoundMetersPerSecond * AIR.maxMach;
+export const MAX_INFLOW_SPEED = AIR.speedOfSoundMetersPerSecond * 2.0;
 
 // Simulation configuration
 export const CONFIG = {
@@ -54,9 +53,9 @@ export const CONFIG = {
 // boundaries to the centre of the domain. Too few iterations leaves the centre
 // under-resolved, which impedes airflow there.
 export const QUALITY_PRESETS = {
-  high:   { pressureIterations: 16, viscosityIterations: 4,  cflSubstepCap: 8 },
-  medium: { pressureIterations: 12, viscosityIterations: 2,  cflSubstepCap: 4 },
-  low:    { pressureIterations: 8,  viscosityIterations: 0,  cflSubstepCap: 2 },
+  high:   { pressureIterations: 16, viscosityIterations: 4,  cflSubstepCap: 64 },
+  medium: { pressureIterations: 12, viscosityIterations: 2,  cflSubstepCap: 32 },
+  low:    { pressureIterations: 8,  viscosityIterations: 0,  cflSubstepCap: 16 },
 };
 
 // Apply the selected quality preset to CONFIG (mutating in place so all

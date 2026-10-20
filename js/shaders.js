@@ -357,26 +357,62 @@ export const compressibleFS = `#version 300 es
               texture(uVelocity, vUV + vec2(0.0, d.y)).xy)), 0.0);
         vec2 gradP = 0.5 * vec2(pR - pL, pT - pB);
         if (vUV.x < 0.02) vel.x = uSpeed;
-        fragColor = vec4(vel - gradP * uDT / rho, 0.0, 1.0);
+        vec2 newVel = vel - gradP * uDT / rho;
+        if (isnan(newVel.x) || isinf(newVel.x) || isnan(newVel.y) || isinf(newVel.y)) {
+          newVel = vel;
+        }
+        fragColor = vec4(newVel, 0.0, 1.0);
       } else if (uMode == 1) {
-        // Advect density and apply the continuity compression term.
+        // Advect density with MinMod flux limiter + positivity enforcement.
         vec2 vel = texture(uVelocity, vUV).xy;
+        // Non-reflecting outflow at right boundary: copy current cell (zero-gradient).
+        if (vUV.x >= 1.0 - d.x) {
+          fragColor = texture(uDensity, vUV);
+          return;
+        }
+        // Semi-Lagrangian backtrace
         vec2 backUV = vUV - vel * uDT * d;
         float rho = texture(uDensity, backUV).x;
+        // MinMod limiter: clamp backtraced value to local neighbor range to
+        // prevent overshoots/undershoots near discontinuities (shocks).
+        float rhoC = texture(uDensity, vUV).x;
+        float rhoL = texture(uDensity, vUV - vec2(d.x, 0.0)).x;
+        float rhoR = texture(uDensity, vUV + vec2(d.x, 0.0)).x;
+        float rhoB = texture(uDensity, vUV - vec2(0.0, d.y)).x;
+        float rhoT = texture(uDensity, vUV + vec2(0.0, d.y)).x;
+        float rhoMin = min(min(rhoC, min(rhoL, rhoR)), min(rhoB, rhoT));
+        float rhoMax = max(max(rhoC, max(rhoL, rhoR)), max(rhoB, rhoT));
+        rho = clamp(rho, rhoMin, rhoMax);
+        // Continuity compression term: rho *= (1 - dt * div)
         float L = texture(uVelocity, vUV - vec2(d.x, 0.0)).x;
         float R = texture(uVelocity, vUV + vec2(d.x, 0.0)).x;
         float B = texture(uVelocity, vUV - vec2(0.0, d.y)).y;
         float T = texture(uVelocity, vUV + vec2(0.0, d.y)).y;
         float div = 0.5 * ((R - L) + (T - B));
         rho = max(rho * (1.0 - uDT * div), 1e-4);
-        // Inflow at left boundary
+        // Inflow at left boundary (Dirichlet)
         if (vUV.x < 0.02) rho = 1.0;
         fragColor = vec4(rho, 0.0, 0.0, 1.0);
       } else if (uMode == 2) {
-        // Advect total energy density and apply its compression work term.
+        // Advect total energy with MinMod flux limiter + compression work.
         vec2 vel = texture(uVelocity, vUV).xy;
+        // Non-reflecting outflow at right boundary: copy current cell (zero-gradient).
+        if (vUV.x >= 1.0 - d.x) {
+          fragColor = texture(uEnergy, vUV);
+          return;
+        }
+        // Semi-Lagrangian backtrace
         vec2 backUV = vUV - vel * uDT * d;
         float E = texture(uEnergy, backUV).x;
+        // MinMod limiter on energy
+        float EC = texture(uEnergy, vUV).x;
+        float EL = texture(uEnergy, vUV - vec2(d.x, 0.0)).x;
+        float ER = texture(uEnergy, vUV + vec2(d.x, 0.0)).x;
+        float EB = texture(uEnergy, vUV - vec2(0.0, d.y)).x;
+        float ET = texture(uEnergy, vUV + vec2(0.0, d.y)).x;
+        float EMin = min(min(EC, min(EL, ER)), min(EB, ET));
+        float EMax = max(max(EC, max(EL, ER)), max(EB, ET));
+        E = clamp(E, EMin, EMax);
         float rho = max(texture(uDensity, vUV).x, 1e-4);
         float p = max((uGamma - 1.0) * (
           texture(uEnergy, vUV).x - 0.5 * rho * dot(vel, vel)), 0.0);
@@ -385,8 +421,9 @@ export const compressibleFS = `#version 300 es
         float B = texture(uVelocity, vUV - vec2(0.0, d.y)).y;
         float T = texture(uVelocity, vUV + vec2(0.0, d.y)).y;
         float div = 0.5 * ((R - L) + (T - B));
-        E = max(E - uDT * (E + p) * div, 1e-4);
-        // Inflow energy at left boundary
+        // Compression work: -p * div (NOT -(E+p)*div)
+        E = max(E - uDT * p * div, 1e-4);
+        // Inflow energy at left boundary (Dirichlet, total energy state)
         if (vUV.x < 0.02) {
           float rho = 1.0;
           float p = 1.0;

@@ -51,7 +51,7 @@ function cacheUniforms(program, names) {
 
 // Cache uniforms for every program (locations are constant after linking)
 cacheUniforms(progCompressible, [
-  'uTarget', 'uVelocity', 'uDensity', 'uEnergy', 'uObstacle',
+  'uVelocity', 'uDensity', 'uEnergy', 'uObstacle',
   'uTexelSize', 'uDT', 'uSpeed', 'uGamma', 'uMode'
 ]);
 cacheUniforms(progInflow, [

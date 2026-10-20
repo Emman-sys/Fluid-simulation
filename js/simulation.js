@@ -70,7 +70,6 @@ export function stepCompressible(dt) {
     getMetersPerSimulationCell();
 
   gl.useProgram(progCompressible);
-  gl.uniform1i(progCompressible.uLoc.uTarget, 0);
   gl.uniform1i(progCompressible.uLoc.uVelocity, 1);
   gl.uniform1i(progCompressible.uLoc.uDensity, 2);
   gl.uniform1i(progCompressible.uLoc.uEnergy, 3);
@@ -135,7 +134,6 @@ function stepFluidSingle(dt, useCompressibleSolver) {
   // 1. Continuous Inflow (Wind Tunnel mode)
   if (CONFIG.inflow && !useCompressibleSolver) {
     const inflowSpeed = Math.min(Math.max(CONFIG.inflowSpeed, 0), MAX_INFLOW_SPEED);
-    CONFIG.inflowSpeed = inflowSpeed;
 
     // Velocity inflow
     gl.useProgram(progInflow);
@@ -315,6 +313,30 @@ function stepFluidSingle(dt, useCompressibleSolver) {
 
   renderStep(progAdvect, velocity.write);
   velocity.swap();
+
+  // Re-apply inflow boundary for compressible mode after velocity modifications
+  // (vorticity, diffusion, advection can overwrite the Dirichlet condition set
+  // inside stepCompressible).
+  if (CONFIG.inflow && useCompressibleSolver) {
+    const inflowSpeed = Math.min(Math.max(CONFIG.inflowSpeed, 0), MAX_INFLOW_SPEED);
+    gl.useProgram(progInflow);
+    gl.uniform1i(progInflow.uLoc.uTarget, 0);
+    gl.uniform1i(progInflow.uLoc.uObstacle, 1);
+    gl.uniform1f(
+      progInflow.uLoc.uSpeed,
+      inflowSpeed / getMetersPerSimulationCell()
+    );
+    gl.uniform1i(progInflow.uLoc.uMode, 0);
+    gl.uniform1i(progInflow.uLoc.uPalette, CONFIG.palette);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+
+    renderStep(progInflow, velocity.write);
+    velocity.swap();
+  }
 
   // 8. Dye Advection
   gl.uniform1f(progAdvect.uLoc.uDissipation, CONFIG.dissipation);
