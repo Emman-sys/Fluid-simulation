@@ -3,6 +3,7 @@
  */
 
 import { CONFIG } from './config.js';
+import { state } from './state.js';
 
 // Canvas references
 export const glCanvas = document.getElementById('gl-canvas');
@@ -90,8 +91,24 @@ export function createDoubleFBO(w, h, internalFormat, format, type, filter) {
   return {
     get read() { return fbo1; },
     get write() { return fbo2; },
-    swap() { const tmp = fbo1; fbo1 = fbo2; fbo2 = tmp; }
+    swap() { const tmp = fbo1; fbo1 = fbo2; fbo2 = tmp; },
+    /** Release the GPU resources held by both buffers. */
+    dispose() {
+      deleteFBO(fbo1);
+      deleteFBO(fbo2);
+      fbo1 = null;
+      fbo2 = null;
+    }
   };
+}
+
+/**
+ * Release the texture and framebuffer owned by an FBO.
+ */
+export function deleteFBO(fbo) {
+  if (!fbo) return;
+  gl.deleteFramebuffer(fbo.fbo);
+  gl.deleteTexture(fbo.tex);
 }
 
 /**
@@ -126,14 +143,41 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-// Simulation dimensions
-export const simW = CONFIG.simWidth;
-export const simH = CONFIG.simHeight;
+// Simulation dimensions (base 512x512, scaled by CONFIG.simResolutionScale)
+export let simW = Math.round(CONFIG.simWidth * CONFIG.simResolutionScale);
+export let simH = Math.round(CONFIG.simHeight * CONFIG.simResolutionScale);
+
+/**
+ * Update the simulation grid dimensions and resize the obstacle texture and
+ * the offscreen rasterizer canvas to match.
+ *
+ * The simulation framebuffers themselves are owned by programs.js; call
+ * setSimulationResolution() there to reallocate them together with the grid.
+ */
+export function setSimulationDimensions(w, h) {
+  simW = w;
+  simH = h;
+
+  // The obstacle texture scales with the simulation grid.
+  gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, simW, simH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+  // The offscreen rasterizer canvas must match the texture dimensions, or
+  // texSubImage2D would upload out-of-bounds texels.
+  obstacleCanvas.width = simW;
+  obstacleCanvas.height = simH;
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  state.obstacleDirty = true;
+}
 
 // Offscreen obstacle rasterizer (RGB: R=255 solid, G=Vx, B=-Vy)
 export const obstacleCanvas = document.createElement('canvas');
-obstacleCanvas.width = CONFIG.simWidth;
-obstacleCanvas.height = CONFIG.simHeight;
+// The rasterizer canvas must match the simulation grid exactly: the upload
+// uses texSubImage2D, which rejects a source larger than the texture.
+obstacleCanvas.width = simW;
+obstacleCanvas.height = simH;
 export const obstacleCtx = obstacleCanvas.getContext('2d', { willReadFrequently: false });
 
 // Obstacle boundary texture (RGBA8)

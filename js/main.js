@@ -4,7 +4,7 @@
  * Importing this module wires up every subsystem and begins rendering.
  */
 
-import { CONFIG } from './config.js';
+import { CONFIG, applyQualityPreset } from './config.js';
 import { state } from './state.js';
 import {
   glCanvas,
@@ -29,6 +29,11 @@ let simFrameCount = 0;
 let simAccumulator = 0;
 const FIXED_SIM_DT = 1 / 60;   // fixed simulation timestep (60 Hz)
 const MAX_SIM_SUBSTEPS = 1;    // at most one sim step per frame; no catch-up spiral
+
+// Auto-quality detection state
+let autoQualityDecided = false;
+const AUTO_QUALITY_SAMPLE_INTERVALS = 6; // 6 samples × 500ms = 3 seconds
+let autoQualityIntervalCount = 0;
 
 function resizeCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -74,9 +79,15 @@ function animate(currentTime) {
   // Step fluid simulation at a fixed timestep.
   // Accumulate frame time and step the simulation as many fixed steps as needed,
   // capped to avoid a spiral of death on slow frames.
+  // Also capped by maxSimMsPerFrame so low-end devices don't stall.
   simAccumulator += frameDt;
   let simSteps = 0;
+  const simBudgetStart = performance.now();
   while (simAccumulator >= FIXED_SIM_DT && simSteps < MAX_SIM_SUBSTEPS) {
+    // Respect the per-frame sim time budget
+    if (performance.now() - simBudgetStart >= CONFIG.maxSimMsPerFrame) {
+      break;
+    }
     const simStart = performance.now();
     stepFluid(FIXED_SIM_DT);
     const simEnd = performance.now();
@@ -102,6 +113,19 @@ function animate(currentTime) {
     fpsTimer = currentTime;
     simTime = 0;
     simFrameCount = 0;
+
+    // Auto-quality detection: sample FPS every 500ms for ~3 seconds, then
+    // pick a quality tier that the device can sustain.
+    if (CONFIG.autoQuality && !autoQualityDecided) {
+      autoQualityIntervalCount++;
+      if (autoQualityIntervalCount >= AUTO_QUALITY_SAMPLE_INTERVALS) {
+        let tier = 'high';
+        if (fps < 30) tier = 'low';
+        else if (fps < 45) tier = 'medium';
+        applyQualityPreset(tier);
+        autoQualityDecided = true;
+      }
+    }
   }
 }
 
@@ -110,7 +134,4 @@ resizeCanvas();
 loadPreset('windtunnel');
 setMode('fluid');
 updateHUD();
-if (hudRes) {
-  hudRes.textContent = `${CONFIG.simWidth}×${CONFIG.simHeight}`;
-}
 requestAnimationFrame(animate);

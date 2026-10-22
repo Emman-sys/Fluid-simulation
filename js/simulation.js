@@ -88,38 +88,54 @@ export function stepCompressible(dt) {
   gl.activeTexture(gl.TEXTURE4);
   gl.bindTexture(gl.TEXTURE_2D, obstacleTex);
 
-  // Update velocity from the compressible pressure field.
-  gl.uniform1i(progCompressible.uLoc.uMode, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
-  renderStep(progCompressible, velocity.write);
-  velocity.swap();
+  // --- HLLC finite-volume update (5 passes, one per conserved variable) ---
 
-  // Advect density.
-  gl.uniform1i(progCompressible.uLoc.uMode, 1);
+  // Pass 1: Density (mass continuity) — uMode == 0
+  gl.uniform1i(progCompressible.uLoc.uMode, 0);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, density.read.tex);
   renderStep(progCompressible, density.write);
   density.swap();
 
-  // Advect total energy.
+  // Rebind density texture for subsequent passes (post-swap)
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, density.read.tex);
+
+  // Pass 2: X-momentum — uMode == 1 (writes velocity.x)
+  gl.uniform1i(progCompressible.uLoc.uMode, 1);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+  renderStep(progCompressible, velocity.write);
+  velocity.swap();
+
+  // Rebind velocity texture for subsequent passes
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+
+  // Pass 3: Y-momentum — uMode == 2 (writes velocity.y)
   gl.uniform1i(progCompressible.uLoc.uMode, 2);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+  renderStep(progCompressible, velocity.write);
+  velocity.swap();
+
+  // Rebind velocity texture for subsequent passes
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+
+  // Pass 4: Total energy — uMode == 3
+  gl.uniform1i(progCompressible.uLoc.uMode, 3);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, energy.read.tex);
   renderStep(progCompressible, energy.write);
   energy.swap();
 
-  // Write thermodynamic pressure to a texture for visualization and for the
-  // compressible/Euler pressure field: p = (gamma - 1) * (E - 0.5 * rho * |u|^2).
-  // Rebind the updated (post-swap) read textures so this pass uses current state.
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
-  gl.activeTexture(gl.TEXTURE2);
-  gl.bindTexture(gl.TEXTURE_2D, density.read.tex);
+  // Rebind energy texture for pressure pass
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, energy.read.tex);
 
-  gl.uniform1i(progCompressible.uLoc.uMode, 3);
+  // Pass 5: Diagnostic pressure output — uMode == 4
+  gl.uniform1i(progCompressible.uLoc.uMode, 4);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
   renderStep(progCompressible, pressure.write);
@@ -339,6 +355,11 @@ function stepFluidSingle(dt, useCompressibleSolver) {
   }
 
   // 8. Dye Advection
+  // Re-activate progAdvect: the compressible re-inflow block above switched the
+  // current program to progInflow, and setting a uniform with a location
+  // belonging to a non-current program raises INVALID_OPERATION (and silently
+  // drops the dye dissipation value).
+  gl.useProgram(progAdvect);
   gl.uniform1f(progAdvect.uLoc.uDissipation, CONFIG.dissipation);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);

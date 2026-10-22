@@ -197,6 +197,21 @@
             <option value="low">Low</option>
           </select>
         </div>
+        <div class="control-row">
+          <div class="control-label">
+            <span>Sim Resolution Scale</span>
+            <span id="val-sim-resolution" class="control-val">100%</span>
+          </div>
+          <input type="range" id="slider-sim-resolution" min="25" max="100" step="25" value="100"
+            title="Internal simulation grid resolution as % of 512x512. Lower = faster on low-end devices.">
+        </div>
+        <div class="toggle-row">
+          <span>Auto Quality (Detect Low-End Device)</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-auto-quality" checked>
+            <span class="slider-toggle"></span>
+          </label>
+        </div>
       </div>
 
       <!-- Continuous Airflow & Wind Tunnel -->

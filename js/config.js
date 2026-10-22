@@ -39,6 +39,20 @@ export const CONFIG = {
   // Lower quality = fewer GPU passes per frame = higher frame rate.
   quality: 'high',
 
+  // Internal simulation resolution as a fraction of the base 512x512 grid.
+  // 1.0 = full 512x512, 0.5 = 256x256, 0.25 = 128x128. Lower = much faster on
+  // low-end / mobile GPUs. Display is always rendered at canvas resolution.
+  simResolutionScale: 1.0,
+
+  // Maximum milliseconds to spend on simulation per frame. If the sim exceeds
+  // this budget, remaining substeps are deferred to the next frame. Prevents
+  // spiral-of-death stutter on slow devices at high Mach.
+  maxSimMsPerFrame: 8.0,
+
+  // When true, the app auto-selects a quality preset based on measured FPS
+  // during the first few seconds. Overridden by manual quality selection.
+  autoQuality: true,
+
   // SOR relaxation factor for the pressure Poisson solver.
   // 1.0 = plain Jacobi, 1.0-2.0 = successive over-relaxation (faster convergence).
   sorRelaxation: 1.8,

@@ -308,10 +308,10 @@ export const inflowFS = `#version 300 es
     }`;
 
 // Compressible Flow Solver Shader
+// Finite-volume HLLC Riemann solver for the 2D Euler equations.
 export const compressibleFS = `#version 300 es
     precision highp float;
     in vec2 vUV;
-    uniform sampler2D uTarget;
     uniform sampler2D uVelocity;
     uniform sampler2D uDensity;
     uniform sampler2D uEnergy;
@@ -322,121 +322,160 @@ export const compressibleFS = `#version 300 es
     uniform float uGamma;
     uniform int uMode;
     out vec4 fragColor;
+
+    // Reconstruct primitive variables at a cell.
+    // Returns vec4(rho, u, v, p)
+    vec4 getPrimitive(vec2 uv) {
+        vec4 obs = texture(uObstacle, uv);
+        if (obs.r > 0.5) {
+            return vec4(0.0, 0.0, 0.0, 0.0);
+        }
+        float rho = max(texture(uDensity, uv).x, 1e-4);
+        vec2 vel = texture(uVelocity, uv).xy;
+        float E = max(texture(uEnergy, uv).x, 0.0);
+        float p = max((uGamma - 1.0) * (E - 0.5 * rho * dot(vel, vel)), 0.0);
+        return vec4(rho, vel.x, vel.y, p);
+    }
+
+    // HLLC flux at a face normal in the x-direction.
+    vec4 hllcFluxX(vec4 left, vec4 right) {
+        float rhoL = left.x, uL = left.y, vL = left.z, pL = left.w;
+        float rhoR = right.x, uR = right.y, vR = right.z, pR = right.w;
+        float aL = sqrt(uGamma * pL / max(rhoL, 1e-4));
+        float aR = sqrt(uGamma * pR / max(rhoR, 1e-4));
+        float SL = min(uL - aL, uR - aR);
+        float SR = max(uL + aL, uR + aR);
+        float pStar = (rhoR * uR * (SR - uR) - rhoL * uL * (SL - uL) + pL - pR) /
+                      (SR - SL);
+        float uStar = (rhoL * uL * (SL - uL) - rhoR * uR * (SR - uR) + pL - pR) /
+                      (rhoL * (SL - uL) - rhoR * (SR - uR) + 1e-8);
+        vec4 FL = vec4(
+            rhoL * uL,
+            rhoL * uL * uL + pL,
+            rhoL * uL * vL,
+            ((uGamma * pL) / (uGamma - 1.0) + 0.5 * rhoL * (uL*uL + vL*vL) + pL) * uL
+        );
+        vec4 FR = vec4(
+            rhoR * uR,
+            rhoR * uR * uR + pR,
+            rhoR * uR * vR,
+            ((uGamma * pR) / (uGamma - 1.0) + 0.5 * rhoR * (uR*uR + vR*vR) + pR) * uR
+        );
+        vec4 FLstar = FL + SL * vec4(
+            rhoL * (uStar - uL),
+            rhoL * (uStar - uL) * uL + pStar - pL,
+            rhoL * (uStar - uL) * vL,
+            rhoL * (uStar - uL) * (0.5 * (uL*uL + vL*vL) + uGamma * pL / ((uGamma - 1.0) * rhoL) + uL * uStar - 0.5 * uL * uL)
+        );
+        vec4 FRstar = FR + SR * vec4(
+            rhoR * (uStar - uR),
+            rhoR * (uStar - uR) * uR + pStar - pR,
+            rhoR * (uStar - uR) * vR,
+            rhoR * (uStar - uR) * (0.5 * (uR*uR + vR*vR) + uGamma * pR / ((uGamma - 1.0) * rhoR) + uR * uStar - 0.5 * uR * uR)
+        );
+        vec4 flux;
+        if (SL >= 0.0) flux = FL;
+        else if (SR <= 0.0) flux = FR;
+        else if (uStar >= 0.0) flux = FLstar;
+        else flux = FRstar;
+        return flux;
+    }
+
+    vec4 hllcFluxY(vec4 left, vec4 right) {
+        vec4 leftRot = vec4(left.x, left.z, left.y, left.w);
+        vec4 rightRot = vec4(right.x, right.z, right.y, right.w);
+        vec4 flux = hllcFluxX(leftRot, rightRot);
+        return vec4(flux.x, flux.z, flux.y, flux.w);
+    }
+
     void main() {
       vec4 obs = texture(uObstacle, vUV);
       if (obs.r > 0.5) {
-        fragColor = texture(uTarget, vUV);
+        // Inside obstacle: write unchanged state
+        if (uMode == 0) fragColor = texture(uDensity, vUV);
+        else if (uMode == 1 || uMode == 2) fragColor = texture(uVelocity, vUV);
+        else if (uMode == 3) fragColor = texture(uEnergy, vUV);
+        else fragColor = vec4(0.0, 0.0, 0.0, 1.0);
         return;
       }
+
       vec2 d = uTexelSize;
+
+      // Inflow boundary at left edge (Dirichlet: rho=1, u=uSpeed, v=0, p=1)
+      bool isInflow = (vUV.x < 0.02);
+      vec4 stateInflow = vec4(1.0, uSpeed, 0.0, 1.0);
+      // Gather primitive states at this cell and neighbors
+      vec4 C = getPrimitive(vUV);
+      if (isInflow) C = stateInflow;
+
+      vec4 L = getPrimitive(vUV - vec2(d.x, 0.0));
+      vec4 R = getPrimitive(vUV + vec2(d.x, 0.0));
+      vec4 B = getPrimitive(vUV - vec2(0.0, d.y));
+      vec4 T = getPrimitive(vUV + vec2(0.0, d.y));
+
+      // Apply inflow boundary to neighbor states if they fall in the inflow strip
+      if (vUV.x - d.x < 0.02) L = stateInflow;
+      if (vUV.x + d.x < 0.02) R = stateInflow;
+
+      // Non-reflecting outflow at right boundary: copy current cell (zero-gradient)
+      bool isOutflow = (vUV.x >= 1.0 - d.x);
+      if (isOutflow) {
+        R = C;
+      }
+
+      // Non-reflecting outflow at top/bottom: zero-gradient
+      if (vUV.y >= 1.0 - d.y) T = C;
+      if (vUV.y < d.y) B = C;
+
+      // Compute HLLC fluxes at the four faces surrounding this cell
+      vec4 FR = hllcFluxX(C, R);
+      vec4 FL = hllcFluxX(L, C);
+      vec4 FT = hllcFluxY(C, T);
+      vec4 FB = hllcFluxY(B, C);
+
+      // Net flux divergence: dU/dt = -(F_right - F_left)/dx - (F_top - F_bottom)/dy
+      vec4 divFlux = (FR - FL) / d.x + (FT - FB) / d.y;
+
+      // Current conserved variables at this cell
+      float rhoC = max(texture(uDensity, vUV).x, 1e-4);
+      vec2 velC = texture(uVelocity, vUV).xy;
+      float EC = max(texture(uEnergy, vUV).x, 0.0);
+      float rhouC = rhoC * velC.x;
+      float rhovC = rhoC * velC.y;
+
+      // Update the assigned conserved variable
       if (uMode == 0) {
-        // Primitive-variable pressure update. E is total energy density:
-        // p = (gamma - 1) * (E - rho * |u|^2 / 2).
-        vec2 vel = texture(uVelocity, vUV).xy;
-        float rho = max(texture(uDensity, vUV).x, 1e-4);
-        float E = max(texture(uEnergy, vUV).x, 0.0);
-        float pL = max((uGamma - 1.0) * (
-          texture(uEnergy, vUV - vec2(d.x, 0.0)).x -
-          0.5 * texture(uDensity, vUV - vec2(d.x, 0.0)).x *
-          dot(texture(uVelocity, vUV - vec2(d.x, 0.0)).xy,
-              texture(uVelocity, vUV - vec2(d.x, 0.0)).xy)), 0.0);
-        float pR = max((uGamma - 1.0) * (
-          texture(uEnergy, vUV + vec2(d.x, 0.0)).x -
-          0.5 * texture(uDensity, vUV + vec2(d.x, 0.0)).x *
-          dot(texture(uVelocity, vUV + vec2(d.x, 0.0)).xy,
-              texture(uVelocity, vUV + vec2(d.x, 0.0)).xy)), 0.0);
-        float pB = max((uGamma - 1.0) * (
-          texture(uEnergy, vUV - vec2(0.0, d.y)).x -
-          0.5 * texture(uDensity, vUV - vec2(0.0, d.y)).x *
-          dot(texture(uVelocity, vUV - vec2(0.0, d.y)).xy,
-              texture(uVelocity, vUV - vec2(0.0, d.y)).xy)), 0.0);
-        float pT = max((uGamma - 1.0) * (
-          texture(uEnergy, vUV + vec2(0.0, d.y)).x -
-          0.5 * texture(uDensity, vUV + vec2(0.0, d.y)).x *
-          dot(texture(uVelocity, vUV + vec2(0.0, d.y)).xy,
-              texture(uVelocity, vUV + vec2(0.0, d.y)).xy)), 0.0);
-        vec2 gradP = 0.5 * vec2(pR - pL, pT - pB);
-        if (vUV.x < 0.02) vel.x = uSpeed;
-        vec2 newVel = vel - gradP * uDT / rho;
-        if (isnan(newVel.x) || isinf(newVel.x) || isnan(newVel.y) || isinf(newVel.y)) {
-          newVel = vel;
-        }
-        fragColor = vec4(newVel, 0.0, 1.0);
+        float rhoNew = rhoC - uDT * divFlux.x;
+        rhoNew = max(rhoNew, 1e-4);
+        if (isInflow) rhoNew = 1.0;
+        fragColor = vec4(rhoNew, 0.0, 0.0, 1.0);
       } else if (uMode == 1) {
-        // Advect density with MinMod flux limiter + positivity enforcement.
-        vec2 vel = texture(uVelocity, vUV).xy;
-        // Non-reflecting outflow at right boundary: copy current cell (zero-gradient).
-        if (vUV.x >= 1.0 - d.x) {
-          fragColor = texture(uDensity, vUV);
-          return;
-        }
-        // Semi-Lagrangian backtrace
-        vec2 backUV = vUV - vel * uDT * d;
-        float rho = texture(uDensity, backUV).x;
-        // MinMod limiter: clamp backtraced value to local neighbor range to
-        // prevent overshoots/undershoots near discontinuities (shocks).
-        float rhoC = texture(uDensity, vUV).x;
-        float rhoL = texture(uDensity, vUV - vec2(d.x, 0.0)).x;
-        float rhoR = texture(uDensity, vUV + vec2(d.x, 0.0)).x;
-        float rhoB = texture(uDensity, vUV - vec2(0.0, d.y)).x;
-        float rhoT = texture(uDensity, vUV + vec2(0.0, d.y)).x;
-        float rhoMin = min(min(rhoC, min(rhoL, rhoR)), min(rhoB, rhoT));
-        float rhoMax = max(max(rhoC, max(rhoL, rhoR)), max(rhoB, rhoT));
-        rho = clamp(rho, rhoMin, rhoMax);
-        // Continuity compression term: rho *= (1 - dt * div)
-        float L = texture(uVelocity, vUV - vec2(d.x, 0.0)).x;
-        float R = texture(uVelocity, vUV + vec2(d.x, 0.0)).x;
-        float B = texture(uVelocity, vUV - vec2(0.0, d.y)).y;
-        float T = texture(uVelocity, vUV + vec2(0.0, d.y)).y;
-        float div = 0.5 * ((R - L) + (T - B));
-        rho = max(rho * (1.0 - uDT * div), 1e-4);
-        // Inflow at left boundary (Dirichlet)
-        if (vUV.x < 0.02) rho = 1.0;
-        fragColor = vec4(rho, 0.0, 0.0, 1.0);
+        // X-momentum: d(rho*u) / dt = -div(F_rho_u)
+        float rhouNew = rhouC - uDT * divFlux.y;
+        float uNew = rhouNew / max(rhoC, 1e-4);
+        if (isInflow) uNew = uSpeed;
+        if (isnan(uNew) || isinf(uNew)) uNew = velC.x;
+        fragColor = vec4(uNew, velC.y, 0.0, 1.0);
       } else if (uMode == 2) {
-        // Advect total energy with MinMod flux limiter + compression work.
-        vec2 vel = texture(uVelocity, vUV).xy;
-        // Non-reflecting outflow at right boundary: copy current cell (zero-gradient).
-        if (vUV.x >= 1.0 - d.x) {
-          fragColor = texture(uEnergy, vUV);
-          return;
-        }
-        // Semi-Lagrangian backtrace
-        vec2 backUV = vUV - vel * uDT * d;
-        float E = texture(uEnergy, backUV).x;
-        // MinMod limiter on energy
-        float EC = texture(uEnergy, vUV).x;
-        float EL = texture(uEnergy, vUV - vec2(d.x, 0.0)).x;
-        float ER = texture(uEnergy, vUV + vec2(d.x, 0.0)).x;
-        float EB = texture(uEnergy, vUV - vec2(0.0, d.y)).x;
-        float ET = texture(uEnergy, vUV + vec2(0.0, d.y)).x;
-        float EMin = min(min(EC, min(EL, ER)), min(EB, ET));
-        float EMax = max(max(EC, max(EL, ER)), max(EB, ET));
-        E = clamp(E, EMin, EMax);
-        float rho = max(texture(uDensity, vUV).x, 1e-4);
-        float p = max((uGamma - 1.0) * (
-          texture(uEnergy, vUV).x - 0.5 * rho * dot(vel, vel)), 0.0);
-        float L = texture(uVelocity, vUV - vec2(d.x, 0.0)).x;
-        float R = texture(uVelocity, vUV + vec2(d.x, 0.0)).x;
-        float B = texture(uVelocity, vUV - vec2(0.0, d.y)).y;
-        float T = texture(uVelocity, vUV + vec2(0.0, d.y)).y;
-        float div = 0.5 * ((R - L) + (T - B));
-        // Compression work: -p * div (NOT -(E+p)*div)
-        E = max(E - uDT * p * div, 1e-4);
-        // Inflow energy at left boundary (Dirichlet, total energy state)
-        if (vUV.x < 0.02) {
+        // Y-momentum: d(rho*v) / dt = -div(F_rho_v)
+        float rhovNew = rhovC - uDT * divFlux.z;
+        float vNew = rhovNew / max(rhoC, 1e-4);
+        if (isInflow) vNew = 0.0;
+        if (isnan(vNew) || isinf(vNew)) vNew = velC.y;
+        fragColor = vec4(velC.x, vNew, 0.0, 1.0);
+      } else if (uMode == 3) {
+        // Total energy: dE / dt = -div(F_E)
+        float ENew = EC - uDT * divFlux.w;
+        ENew = max(ENew, 0.0);
+        if (isInflow) {
           float rho = 1.0;
           float p = 1.0;
-          E = p / (uGamma - 1.0) + 0.5 * rho * uSpeed * uSpeed;
+          ENew = p / (uGamma - 1.0) + 0.5 * rho * uSpeed * uSpeed;
         }
-        fragColor = vec4(E, 0.0, 0.0, 1.0);
+        fragColor = vec4(ENew, 0.0, 0.0, 1.0);
       } else {
-        // uMode == 3: write thermodynamic pressure for display/visualization.
-        // p = (gamma - 1) * (E - 0.5 * rho * |u|^2)
-        vec2 vel = texture(uVelocity, vUV).xy;
-        float rho = max(texture(uDensity, vUV).x, 1e-4);
-        float E = max(texture(uEnergy, vUV).x, 0.0);
-        float p = max((uGamma - 1.0) * (E - 0.5 * rho * dot(vel, vel)), 0.0);
+        // uMode == 4: diagnostic pressure output for display/visualization
+        float p = max((uGamma - 1.0) * (EC - 0.5 * rhoC * dot(velC, velC)), 0.0);
         fragColor = vec4(p, 0.0, 0.0, 1.0);
       }
     }`;

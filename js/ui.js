@@ -6,7 +6,8 @@
 
 import { CONFIG, MAX_INFLOW_SPEED, applyQualityPreset } from './config.js';
 import { state } from './state.js';
-import { getDomainHeight } from './gl.js';
+import { getDomainHeight, simW, simH } from './gl.js';
+import { setSimulationResolution } from './programs.js';
 import { Obstacle } from './obstacle.js';
 import { updateObstacles } from './rasterizer.js';
 import { clearFluid } from './simulation.js';
@@ -283,6 +284,31 @@ document.getElementById('select-quality').addEventListener('change', (e) => {
     quality.charAt(0).toUpperCase() + quality.slice(1);
 });
 
+// Manual resolution scale override (disables auto-quality while adjusting)
+document.getElementById('slider-sim-resolution').addEventListener('input', (e) => {
+  const pct = parseInt(e.target.value, 10);
+  document.getElementById('val-sim-resolution').textContent = `${pct}%`;
+  CONFIG.autoQuality = false;
+  document.getElementById('toggle-auto-quality').checked = false;
+  setSimulationResolution(pct / 100);
+  clearFluid();
+  updateHUD();
+});
+
+// Auto-quality toggle
+document.getElementById('toggle-auto-quality').addEventListener('change', (e) => {
+  CONFIG.autoQuality = e.target.checked;
+  if (CONFIG.autoQuality) {
+    // Re-enter auto-detection; main.js will re-evaluate after next sample window
+    // Reset is handled in main.js via autoQualityDecided flag
+  }
+});
+
+// Initialize the resolution slider and auto-quality toggle to match CONFIG
+document.getElementById('slider-sim-resolution').value = Math.round(CONFIG.simResolutionScale * 100);
+document.getElementById('val-sim-resolution').textContent = `${Math.round(CONFIG.simResolutionScale * 100)}%`;
+document.getElementById('toggle-auto-quality').checked = CONFIG.autoQuality;
+
 // Initialize the quality selector to match CONFIG
 document.getElementById('select-quality').value = CONFIG.quality;
 document.getElementById('val-solver-quality').textContent =
@@ -353,4 +379,8 @@ window.addEventListener('keydown', (e) => {
 
 export function updateHUD() {
   document.getElementById('hud-objs').textContent = state.obstacles.length;
+  // simW/simH are live bindings from gl.js, so this reflects the current
+  // (possibly scaled) simulation grid.
+  const hudRes = document.getElementById('hud-res');
+  if (hudRes) hudRes.textContent = `${simW}×${simH}`;
 }

@@ -4,13 +4,16 @@
  * double-buffered (ping-pong) simulation targets.
  */
 
+import { CONFIG } from './config.js';
 import {
   gl,
   simW,
   simH,
   createProgram,
   createFBO,
-  createDoubleFBO
+  createDoubleFBO,
+  deleteFBO,
+  setSimulationDimensions
 } from './gl.js';
 import {
   baseVS,
@@ -77,10 +80,54 @@ cacheUniforms(progDisplay, [
 ]);
 
 // Simulation Buffers (Double-buffered for ping-pong)
-export const velocity = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
-export const dye = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
-export const density = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
-export const energy = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
-export const pressure = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
-export const divergence = createFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
-export const curl = createFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
+export let velocity = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+export let dye = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+export let density = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+export let energy = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+export let pressure = createDoubleFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
+export let divergence = createFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
+export let curl = createFBO(simW, simH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
+
+/**
+ * Resize the simulation grid and reallocate every simulation framebuffer.
+ *
+ * The FBO objects are recreated rather than resized in place: createDoubleFBO
+ * exposes `read`/`write` as getters over a private pair, so the underlying
+ * textures and framebuffers cannot be swapped out from the outside.
+ */
+export function setSimulationResolution(scale) {
+  CONFIG.simResolutionScale = Math.min(1.0, Math.max(0.25, scale));
+  const w = Math.round(CONFIG.simWidth * CONFIG.simResolutionScale);
+  const h = Math.round(CONFIG.simHeight * CONFIG.simResolutionScale);
+
+  const formats = {
+    velocity:   [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR],
+    dye:        [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR],
+    density:    [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR],
+    energy:     [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR],
+    pressure:   [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST],
+    divergence: [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST],
+    curl:       [gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST],
+  };
+
+  // Release the previous framebuffers before allocating the new ones, so
+  // repeated resolution changes do not leak GPU textures/framebuffers.
+  velocity.dispose();
+  dye.dispose();
+  density.dispose();
+  energy.dispose();
+  pressure.dispose();
+  deleteFBO(divergence);
+  deleteFBO(curl);
+
+  // Resize the grid first so the obstacle texture and rasterizer canvas match.
+  setSimulationDimensions(w, h);
+
+  velocity   = createDoubleFBO(w, h, ...formats.velocity);
+  dye        = createDoubleFBO(w, h, ...formats.dye);
+  density    = createDoubleFBO(w, h, ...formats.density);
+  energy     = createDoubleFBO(w, h, ...formats.energy);
+  pressure   = createDoubleFBO(w, h, ...formats.pressure);
+  divergence = createFBO(w, h, ...formats.divergence);
+  curl       = createFBO(w, h, ...formats.curl);
+}
